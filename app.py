@@ -433,7 +433,7 @@ Paragrafo di risposta ipotetico:"""
                     logger.error(f"Batch {current_batch_num} fallito dopo 5 tentativi: {e}")
                     raise  # Interrompe il processo se un batch fallisce definitivamente
 
-            logger.info("Tutti i batch sono stati elaborati con successo.")
+            logger.info("Tutti i batch sono stati elaborati con successo. ")
             # --- FINE NUOVA LOGICA ---
 
             logger.info("Salvataggio del nuovo indice su disco...")
