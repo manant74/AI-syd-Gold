@@ -8,3 +8,4 @@ unstructured
 pdfplumber
 pymupdf
 pypdf
+nest-asyncio
