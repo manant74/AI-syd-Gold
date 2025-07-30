@@ -6,6 +6,7 @@ import hashlib
 import pickle
 import logging
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 # Import delle classi necessarie da LangChain
 from langchain_community.document_loaders import PyPDFDirectoryLoader
@@ -408,9 +409,34 @@ Paragrafo di risposta ipotetico:"""
                 vectorstore=vectorstore, docstore=store,
                 child_splitter=child_splitter, parent_splitter=parent_splitter,
             )
-            base_retriever.add_documents(documents, ids=None)
+            
+             # --- NUOVA LOGICA DI BATCHING E RETRY ---
+            # Definiamo una funzione interna con retry per aggiungere documenti in modo robusto
+            @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
+            def add_documents_with_retry(docs):
+                """Aggiunge un batch di documenti al retriever, con tentativi automatici."""
+                base_retriever.add_documents(docs, ids=None)
+
+            batch_size = 50  # Numero di documenti da processare in ogni batch
+            total_docs = len(documents)
+            total_batches = (total_docs // batch_size) + (1 if total_docs % batch_size > 0 else 0)
+            
+            logger.info(f"Inizio aggiunta di {total_docs} documenti in {total_batches} batch...")
+
+            for i in range(0, total_docs, batch_size):
+                batch_docs = documents[i:i + batch_size]
+                current_batch_num = (i // batch_size) + 1
+                logger.info(f"Elaborazione batch {current_batch_num}/{total_batches} (documenti da {i+1} a {min(i+batch_size, total_docs)})...")
+                try:
+                    add_documents_with_retry(batch_docs)
+                except Exception as e:
+                    logger.error(f"Batch {current_batch_num} fallito dopo 5 tentativi: {e}")
+                    raise  # Interrompe il processo se un batch fallisce definitivamente
+
+            logger.info("Tutti i batch sono stati elaborati con successo.")
+            # --- FINE NUOVA LOGICA ---
+
             logger.info("Salvataggio del nuovo indice su disco...")
-            os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
             base_retriever.vectorstore.save_local(faiss_index_path)
             with open(docstore_path, "wb") as f: pickle.dump(base_retriever.docstore, f)
             current_metadata = _get_pdf_metadata(PDF_DIRECTORY_PATH)
