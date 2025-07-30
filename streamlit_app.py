@@ -1,5 +1,9 @@
 # /progetto_chatbot_pdf/streamlit_app.py
 
+# Patch per risolvere il problema "There is no current event loop in thread" con Streamlit e Google
+import nest_asyncio
+nest_asyncio.apply()
+
 import streamlit as st
 import time
 import os
@@ -14,7 +18,7 @@ st.set_page_config(
 )
 
 st.title("🤖 AI-syd-Gold: Assistente Tecnico per Cuscinetti")
-st.caption("Fai domande sui documenti tecnici caricati. L'assistente risponderà basandosi esclusivamente sulle informazioni contenute nei PDF.")
+st.caption("Fai domande sui documenti tecnici caricati. L'assistente risponderà basandosi sulla sua Knowledge Base.")
 
 # --- Sidebar per la Configurazione ---
 with st.sidebar:
@@ -34,6 +38,19 @@ with st.sidebar:
     )
     
     st.info(f"Modalità selezionata: **{retriever_type}**")
+
+    # Logica per gestire il cambio di retriever e informare l'utente
+    if "active_retriever_type" not in st.session_state:
+        st.session_state.active_retriever_type = retriever_type
+
+    if st.session_state.active_retriever_type != retriever_type:
+        st.session_state.active_retriever_type = retriever_type
+        # Resetta la chat e informa l'utente del cambio
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Ciao! Sono AI-syd-Gold. Come posso aiutarti oggi con i documenti tecnici?"},
+            {"role": "assistant", "content": f"Modalità di ricerca aggiornata a **{retriever_type}**. La conversazione è stata resettata per coerenza."}
+        ]
+        st.rerun()
 
     st.markdown("---")
     if st.button("🗑️ Pulisci cronologia chat"):
