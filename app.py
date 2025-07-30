@@ -347,10 +347,15 @@ Paragrafo di risposta ipotetico:"""
 
         base_retriever = None
         faiss_index_path = os.path.join(VECTOR_STORE_PATH, "faiss_index")
+        faiss_core_index_file = os.path.join(faiss_index_path, "index.faiss")
         docstore_path = os.path.join(VECTOR_STORE_PATH, "docstore.pkl")
 
         is_cache_valid = False
-        if os.path.exists(METADATA_FILE) and os.path.exists(faiss_index_path) and os.path.exists(docstore_path):
+        # Controllo di robustezza: verifica che i file di cache esistano e non siano vuoti.
+        # Questo previene errori in ambienti cloud dove i file potrebbero essere creati ma vuoti.
+        if (os.path.exists(METADATA_FILE) and os.path.getsize(METADATA_FILE) > 0 and
+            os.path.exists(faiss_core_index_file) and os.path.getsize(faiss_core_index_file) > 0 and
+            os.path.exists(docstore_path) and os.path.getsize(docstore_path) > 0):
             try:
                 with open(METADATA_FILE, 'r') as f: saved_metadata = json.load(f)
                 current_metadata = _get_pdf_metadata(PDF_DIRECTORY_PATH)
