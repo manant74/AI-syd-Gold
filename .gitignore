@@ -1,0 +1,8 @@
+# Cache e file generati localmente
+__pycache__/
+*.pyc
+*.pyo
+
+# File di credenziali
+.env
+
