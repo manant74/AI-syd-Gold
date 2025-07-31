@@ -46,7 +46,7 @@ METADATA_FILE = os.path.join(VECTOR_STORE_PATH, "metadata.json") if VECTOR_STORE
 
 # --- Prompt Template per la catena RAG ---
 RAG_PROMPT_TEMPLATE = """
-Sei AI-syd-Gold, un assistente tecnico esperto in ingegneria dei materiali e meccanica, specializzato in cuscinetti.
+Sei BearX, un assistente tecnico esperto in ingegneria dei materiali e meccanica, specializzato in cuscinetti.
 Il tuo obiettivo è assistere un ingegnere meccanico fornendo risposte tecniche precise, basate **esclusivamente** sul contesto fornito.
 
 **REGOLE FONDAMENTALI:**
@@ -483,7 +483,7 @@ Paragrafo di risposta ipotetico:"""
 
         # Creiamo un prompt personalizzato per guidare il comportamento del modello
         prompt_template = """
-        Sei AI-syd-Gold, un assistente tecnico esperto in ingegneria dei materiali e meccanica, specializzato in cuscinetti.
+        Sei BearX, un assistente tecnico esperto in ingegneria dei materiali e meccanica, specializzato in cuscinetti.
         Il tuo obiettivo è assistere un ingegnere meccanico fornendo risposte tecniche precise, basate **esclusivamente** sul contesto fornito.
 
         **REGOLE FONDAMENTALI:**
@@ -543,7 +543,7 @@ def main():
         print("Inizializzazione fallita. Controlla i log per maggiori dettagli.")
         return
 
-    print("\n=== AI-SYD-GOLD PRONTO ===")
+    print("\n=== BEARX PRONTO ===")
     print("Modalità di recupero: ParentDocumentRetriever")
     print("Questa modalità migliora il contesto fornendo documenti più completi al modello.")
     print("Digita le tue domande sui documenti PDF caricati.")
