@@ -17,8 +17,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.title("🤖 BearX: so tutto di  Cuscinetti")
-st.caption("Fai domande sul mondo dei cuscinett, proverà a rispondere basandomi sulla mia Knowledge Base.")
+st.title("🤖 BearX: conosco tutto dei Cuscinetti")
+st.caption("Fai domande sul mondo dei cuscinetti, proverò a rispondere basandomi sulla mia Knowledge Base.")
 
 # --- Sidebar per la Configurazione ---
 with st.sidebar:
