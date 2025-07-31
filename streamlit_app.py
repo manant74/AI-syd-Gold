@@ -11,13 +11,13 @@ from app import create_chatbot, PDF_DIRECTORY_PATH, VECTOR_STORE_PATH
 
 # --- Configurazione della Pagina Streamlit ---
 st.set_page_config(
-    page_title="AI-syd-Gold Chatbot",
+    page_title="BearX Chatbot",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🤖 AI-syd-Gold: Assistente Tecnico per Cuscinetti")
+st.title("🤖 BearX: Assistente Tecnico per Cuscinetti")
 st.caption("Fai domande sui documenti tecnici caricati. L'assistente risponderà basandosi sulla sua Knowledge Base.")
 
 # --- Sidebar per la Configurazione ---
@@ -47,14 +47,14 @@ with st.sidebar:
         st.session_state.active_retriever_type = retriever_type
         # Resetta la chat e informa l'utente del cambio
         st.session_state.messages = [
-            {"role": "assistant", "content": "Ciao! Sono AI-syd-Gold. Come posso aiutarti oggi con i documenti tecnici?"},
+            {"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"},
             {"role": "assistant", "content": f"Modalità di ricerca aggiornata a **{retriever_type}**. La conversazione è stata resettata per coerenza."}
         ]
         st.rerun()
 
     st.markdown("---")
     if st.button("🗑️ Pulisci cronologia chat"):
-        st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono AI-syd-Gold. Come posso aiutarti oggi con i documenti tecnici?"}]
+        st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"}]
         st.rerun()
 
     st.markdown("---")
@@ -100,7 +100,7 @@ if qa_chain is None:
 
 # --- Gestione della Cronologia della Chat ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono AI-syd-Gold. Come posso aiutarti oggi con i documenti tecnici?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"}]
 
 # Mostra i messaggi precedenti
 for message in st.session_state.messages:
