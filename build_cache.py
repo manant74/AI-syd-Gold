@@ -24,14 +24,18 @@ def build_cache():
     print("Invocazione della funzione create_chatbot() per generare il nuovo indice...")
     
     try:
-        # Chiamiamo create_chatbot con un retriever standard per assicurarci che la cache venga creata.
-        # La funzione si occuperà di leggere i PDF, creare l'indice e salvarlo.
-        chatbot_instance = create_chatbot(retriever_type="standard")
+        # 1. Creiamo la cache per le strategie basate su ParentDocumentRetriever
+        print("\n--- 1. Creazione cache per strategie 'standard', 'hyde', 'multi-query' ---")
+        chatbot_instance_standard = create_chatbot(retriever_type="standard")
         
-        if chatbot_instance and os.path.exists(VECTOR_STORE_PATH):
+        # 2. Creiamo la cache per la strategia 'ensemble'
+        print("\n--- 2. Creazione cache per strategia 'ensemble' ---")
+        chatbot_instance_ensemble = create_chatbot(retriever_type="ensemble")
+
+        if chatbot_instance_standard and chatbot_instance_ensemble and os.path.exists(VECTOR_STORE_PATH):
             print("\n--- ✅ Processo di creazione della cache completato con successo! ---")
-            print(f"L'indice FAISS e i file di cache sono stati salvati in: '{VECTOR_STORE_PATH}'")
-            print("Ora puoi eseguire 'git add', 'git commit' e 'git push' per includere la cache nel tuo repository.")
+            print(f"Le cache per tutte le strategie sono state salvate in: '{VECTOR_STORE_PATH}'")
+            print("Ora puoi eseguire 'git add .', 'git commit' e 'git push' per includere la cache nel tuo repository.")
         else:
             print("\n--- ❌ Errore: la creazione della cache non sembra essere andata a buon fine. ---")
             print("Controlla i log sopra per eventuali errori durante l'inizializzazione del chatbot.")
