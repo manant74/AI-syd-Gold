@@ -17,8 +17,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.title("🤖 BearX: Assistente Tecnico per Cuscinetti")
-st.caption("Fai domande sui documenti tecnici caricati. L'assistente risponderà basandosi sulla sua Knowledge Base.")
+st.title("🤖 BearX: so tutto di  Cuscinetti")
+st.caption("Fai domande sul mondo dei cuscinett, proverà a rispondere basandomi sulla mia Knowledge Base.")
 
 # --- Sidebar per la Configurazione ---
 with st.sidebar:
@@ -47,14 +47,14 @@ with st.sidebar:
         st.session_state.active_retriever_type = retriever_type
         # Resetta la chat e informa l'utente del cambio
         st.session_state.messages = [
-            {"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"},
+            {"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi sui cuscinetti?"},
             {"role": "assistant", "content": f"Modalità di ricerca aggiornata a **{retriever_type}**. La conversazione è stata resettata per coerenza."}
         ]
         st.rerun()
 
     st.markdown("---")
     if st.button("🗑️ Pulisci cronologia chat"):
-        st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"}]
+        st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i cuscinetti?"}]
         st.rerun()
 
     st.markdown("---")
