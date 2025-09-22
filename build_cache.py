@@ -2,7 +2,11 @@
 
 import os
 import shutil
-from app import create_chatbot, VECTOR_STORE_PATH
+from app import create_chatbot
+from config import AppConfig
+
+# Configurazione centralizzata
+config = AppConfig.from_env()
 
 def build_cache():
     """
@@ -32,9 +36,9 @@ def build_cache():
         print("\n--- 2. Creazione cache per strategia 'ensemble' ---")
         chatbot_instance_ensemble = create_chatbot(retriever_type="ensemble")
 
-        if chatbot_instance_standard and chatbot_instance_ensemble and os.path.exists(VECTOR_STORE_PATH):
+        if chatbot_instance_standard and chatbot_instance_ensemble and os.path.exists(config.vector_store_directory):
             print("\n--- ✅ Processo di creazione della cache completato con successo! ---")
-            print(f"Le cache per tutte le strategie sono state salvate in: '{VECTOR_STORE_PATH}'")
+            print(f"Le cache per tutte le strategie sono state salvate in: '{config.vector_store_directory}'")
             print("Ora puoi eseguire 'git add .', 'git commit' e 'git push' per includere la cache nel tuo repository.")
         else:
             print("\n--- ❌ Errore: la creazione della cache non sembra essere andata a buon fine. ---")

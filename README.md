@@ -5,30 +5,38 @@ Un chatbot intelligente specializzato in ingegneria dei materiali e meccanica, c
 ## 🚀 Setup Rapido
 
 ### 1. Installazione Dipendenze
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Configurazione API Google
+
 1. Ottieni una chiave API da [Google AI Studio](https://makersuite.google.com/app/apikey)
 2. Crea un file `.env` basato su `env_template.txt`:
-```bash
-cp env_template.txt .env
-```
+
+   ```bash
+   cp env_template.txt .env
+   ```
+
 3. Modifica il file `.env` inserendo la tua chiave API:
-```
+
+```text
 GOOGLE_API_KEY=your_actual_api_key_here
 ```
 
 ### 3. Aggiunta Documenti PDF
+
 Posiziona i tuoi documenti PDF tecnici nella cartella `pdfs/`.
 
 ### 4. Creazione Cache
+
 ```bash
 python build_cache.py
 ```
 
 ### 5. Avvio Chatbot
+
 ```bash
 python app.py
 ```
@@ -38,11 +46,12 @@ python app.py
 ### Errore di Timeout durante la Creazione Cache
 
 Se incontri errori come:
-```
+
+```text
 Error embedding content: Timeout of 60.0s exceeded, last exception: 503 IOCP/Socket: Connection reset
 ```
 
-#### Soluzioni:
+#### Soluzioni
 
 1. **Verifica Connessione Internet**
    - Assicurati di avere una connessione stabile
@@ -55,7 +64,8 @@ Error embedding content: Timeout of 60.0s exceeded, last exception: 503 IOCP/Soc
 
 3. **Aumenta Timeout**
    Modifica il file `.env`:
-   ```
+
+   ```text
    EMBEDDING_TIMEOUT=180
    EMBEDDING_RETRY_ATTEMPTS=5
    EMBEDDING_RETRY_DELAY=10
@@ -63,6 +73,7 @@ Error embedding content: Timeout of 60.0s exceeded, last exception: 503 IOCP/Soc
 
 4. **Problemi di Rete**
    - Se usi un proxy aziendale, configura le variabili d'ambiente:
+
      ```bash
      export HTTP_PROXY=http://proxy.company.com:8080
      export HTTPS_PROXY=http://proxy.company.com:8080
@@ -76,24 +87,27 @@ Error embedding content: Timeout of 60.0s exceeded, last exception: 503 IOCP/Soc
 ### Altri Errori Comuni
 
 #### "File .env non trovato"
+
 ```bash
 cp env_template.txt .env
 # Poi modifica .env con la tua chiave API
 ```
 
 #### "Nessun file PDF trovato"
+
 - Assicurati che i PDF siano nella cartella `pdfs/`
 - Verifica che i PDF non siano protetti da password
 - Controlla che i PDF contengano testo (non solo immagini)
 
 #### "Errore nel caricamento dei documenti"
+
 ```bash
 pip install unstructured pdfplumber pymupdf
 ```
 
 ## 📁 Struttura Progetto
 
-```
+```text
 AI-syd-Gold/
 ├── app.py                 # Chatbot principale
 ├── build_cache.py         # Script per creare la cache
@@ -123,6 +137,7 @@ AI-syd-Gold/
 ## 📊 Monitoraggio
 
 Il sistema include logging dettagliato per:
+
 - Caricamento documenti
 - Creazione embedding
 - Processo di cache

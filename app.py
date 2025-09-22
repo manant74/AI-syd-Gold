@@ -8,9 +8,14 @@ import logging
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
+# Import configurazione centralizzata
+from config import AppConfig
+from system_prompt import EXPERT_PROMPT, HYDE_PROMPT, CHAIN_OF_THOUGHT_PROMPT, CHAIN_OF_THOUGHT_SYNTHESIS_PROMPT
+from utils import MemoryOptimizer, monitor_memory_usage, process_documents_in_chunks
+
 # Import delle classi necessarie da LangChain
 from langchain_community.document_loaders import PyPDFDirectoryLoader
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from llm_providers import LLMFactory
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import HypotheticalDocumentEmbedder
 from langchain_community.vectorstores import FAISS
@@ -22,80 +27,26 @@ from langchain.chains import RetrievalQA
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.storage import InMemoryStore
 from langchain.retrievers import ParentDocumentRetriever
+from langchain_core.retrievers import BaseRetriever
 # Configurazione logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Carica le variabili d'ambiente dal file .env (la nostra chiave API Google)
-load_dotenv()
+# override=True forza l'uso del file .env anche se ci sono variabili di sistema
+load_dotenv(override=True)
 
-# --- CONFIGURAZIONE PER DEPLOY SEMPLICE (es. Streamlit Cloud) ---
-# I PDF devono essere in una cartella 'pdfs' nel repository.
-# La cache verrà creata in una cartella 'vector_store_cache' (sarà effimera).
-PDF_DIRECTORY_PATH = os.getenv("PDF_DIRECTORY_PATH", "pdfs")
-VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "vector_store_cache")
+# Configurazione centralizzata dell'applicazione
+config = AppConfig.from_env()
 
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
+# Inizializzazione del memory optimizer
+memory_optimizer = MemoryOptimizer(config)
 
-# Parametri per il retriever, per un controllo più fine sulla ricerca
-RETRIEVER_K = int(os.getenv("RETRIEVER_K", "5"))
-RETRIEVER_FETCH_K = int(os.getenv("RETRIEVER_FETCH_K", "20"))
-SEARCH_TYPE = os.getenv("SEARCH_TYPE", "similarity")  # "similarity" o "mmr"
-
-METADATA_FILE = os.path.join(VECTOR_STORE_PATH, "metadata.json") if VECTOR_STORE_PATH else None
-
-# --- Prompt Template per la catena RAG ---
-RAG_PROMPT_TEMPLATE = """
-Sei BearX, un assistente tecnico specializzato in ingegneria meccanica e tecnologia dei cuscinetti, con esperienza in applicazioni industriali.
-
-**RUOLO E COMPETENZE:**
-- Esperto in progettazione, selezione e manutenzione di cuscinetti
-- Specializzato in analisi di carichi, velocità e condizioni operative
-- Competente in standard tecnici (ISO, DIN, ANSI) e specifiche costruttive
-- Esperto in lubrificazione, materiali e trattamenti termici
-- Conoscitore di applicazioni industriali (macchine utensili, motori, pompe, etc.)
-
-**REGOLE FONDAMENTALI:**
-1. **BASATI SOLO SUL CONTESTO**: Usa esclusivamente le informazioni fornite nei documenti tecnici
-2. **PRECISIONE TECNICA**: Riporta esattamente dati, formule, specifiche e unità di misura
-3. **CONTESTO INDUSTRIALE**: Considera sempre l'applicazione pratica e le condizioni operative
-4. **STANDARD E NORME**: Cita sempre gli standard tecnici quando menzionati nei documenti
-
-**ISTRUZIONI PER LA FORMATTAZIONE:**
-- **Tabelle**: Per specifiche tecniche, dati dimensionali, carichi, velocità, temperature
-- **Elenchi puntati**: Per caratteristiche, procedure, vantaggi/svantaggi, requisiti
-- **Paragrafi**: Per spiegazioni concettuali, principi di funzionamento, analisi
-- **Formule**: Riporta esattamente le formule matematiche presenti nei documenti
-- **Unità di misura**: Mantieni sempre le unità originali (N, kN, rpm, °C, mm, etc.)
-
-**ASPETTI TECNICI SPECIFICI:**
-- **Materiali**: Specifica composizione, trattamenti termici, durezza
-- **Lubrificazione**: Tipo, viscosità, intervalli di cambio, condizioni operative
-- **Montaggio/Smontaggio**: Procedure, attrezzi, precauzioni, tolleranze
-- **Manutenzione**: Controlli, ispezioni, sostituzioni, diagnostica
-- **Applicazioni**: Contesto industriale, condizioni ambientali, carichi dinamici
-
-**RISPOSTA IN ITALIANO** con terminologia tecnica appropriata.
-
----
-**CONTESTO FORNITO:**
-{context}
----
-**DOMANDA:**
-{question}
-
-**RISPOSTA TECNICA:**
-"""
 
 def validate_environment():
     """Valida le variabili d'ambiente e i percorsi."""
-    if not PDF_DIRECTORY_PATH:
-        raise ValueError("PDF_DIRECTORY_PATH non impostato nel file .env")
-    if not VECTOR_STORE_PATH:
-        raise ValueError("VECTOR_STORE_PATH non impostato nel file .env")
-    if not os.path.isdir(PDF_DIRECTORY_PATH):
-        # Per i deploy cloud, la directory potrebbe non esistere al primo avvio
-        raise ValueError(f"Directory PDF non trovata: {PDF_DIRECTORY_PATH}")
+    # Usa la validazione integrata della configurazione
+    config.validate()
     logger.info("Validazione ambiente completata con successo")
 
 def _get_pdf_hash(filepath):
@@ -135,17 +86,30 @@ def _get_pdf_metadata(directory):
     return metadata
 
 def initialize_embeddings():
-    """Inizializza e testa l'embedding Google AI."""
-    try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        # Test dell'embedding per verificare la connessione
-        test_embedding = embeddings.embed_query("test")
-        if not test_embedding:
-            raise RuntimeError("Test embedding fallito - nessun risultato")
-        logger.info("Embeddings Google AI inizializzati con successo")
-        return embeddings
-    except Exception as e:
-        raise RuntimeError(f"Errore nell'inizializzazione dell'embedding Google AI: {e}")
+    """Inizializza e testa l'embedding con il provider configurato e ottimizzazioni memoria."""
+    with monitor_memory_usage("initialize_embeddings"):
+        try:
+            logger.info(f"Inizializzazione embeddings: provider={config.embedding_provider}, model={config.embedding_model}")
+
+            # Crea embeddings usando il factory
+            embeddings = LLMFactory.create_embeddings(
+                provider=config.embedding_provider,
+                model=config.embedding_model,
+                config=config
+            )
+
+            # Test dell'embedding per verificare la connessione
+            test_embedding = embeddings.embed_query("test")
+            if not test_embedding:
+                raise RuntimeError("Test embedding fallito - nessun risultato")
+
+            # Applica ottimizzazioni memoria agli embeddings
+            optimized_embeddings = memory_optimizer.create_optimized_embeddings_func(embeddings)
+
+            logger.info(f"Embeddings {config.embedding_provider} inizializzati con successo")
+            return optimized_embeddings
+        except Exception as e:
+            raise RuntimeError(f"Errore nell'inizializzazione dell'embedding {config.embedding_provider}: {e}")
 
 def debug_pdf_content(documents):
     """Debug del contenuto dei PDF caricati con analisi dettagliata delle pagine."""
@@ -226,86 +190,93 @@ def debug_pdf_content(documents):
 
 def load_and_validate_documents():
     """Carica i documenti PDF e verifica che non siano vuoti, con test di loader alternativi."""
-    try:
-        # Prova il loader principale
-        logger.info("Tentativo di caricamento documenti con PyPDFDirectoryLoader...")
-        loader = PyPDFDirectoryLoader(PDF_DIRECTORY_PATH, glob="**/*.pdf")
-        documents = loader.load()
+    with monitor_memory_usage("load_and_validate_documents"):
+        try:
+            # Prova il loader principale
+            logger.info("Tentativo di caricamento documenti con PyPDFDirectoryLoader...")
+            loader = PyPDFDirectoryLoader(config.pdf_directory, glob="**/*.pdf")
+            documents = loader.load()
+
+            logger.info(f"PyPDFDirectoryLoader ha caricato {len(documents)} documenti")
         
-        logger.info(f"PyPDFDirectoryLoader ha caricato {len(documents)} documenti")
-        
-        # Se non abbiamo documenti o sono insufficienti, proviamo loader alternativi
-        if not documents or len(documents) < 5:
-            logger.warning("Pochi documenti caricati, tentativo con loader alternativi...")
-            
-            try:
-                # Prova con UnstructuredPDFLoader per singoli file
-                from langchain_community.document_loaders import UnstructuredPDFLoader
-                alternative_docs = []
-                
-                for filename in os.listdir(PDF_DIRECTORY_PATH):
+            # Se non abbiamo documenti o sono insufficienti, proviamo loader alternativi
+            if not documents or len(documents) < 5:
+                logger.warning("Pochi documenti caricati, tentativo con loader alternativi...")
+
+                try:
+                    # Prova con UnstructuredPDFLoader per singoli file
+                    from langchain_community.document_loaders import UnstructuredPDFLoader
+                    alternative_docs = []
+
+                    for filename in os.listdir(config.pdf_directory):
+                        if filename.lower().endswith('.pdf'):
+                            file_path = os.path.join(config.pdf_directory, filename)
+                            try:
+                                alt_loader = UnstructuredPDFLoader(file_path)
+                                file_docs = alt_loader.load()
+                                alternative_docs.extend(file_docs)
+                                logger.info(f"UnstructuredPDFLoader caricato {len(file_docs)} docs da {filename}")
+                            except Exception as e:
+                                logger.warning(f"UnstructuredPDFLoader fallito per {filename}: {e}")
+
+                    if len(alternative_docs) > len(documents):
+                        logger.info(f"UnstructuredPDFLoader più efficace: {len(alternative_docs)} vs {len(documents)}")
+                        documents = alternative_docs
+
+                except ImportError:
+                    logger.warning("UnstructuredPDFLoader non disponibile, installa con: pip install unstructured")
+                except Exception as e:
+                    logger.warning(f"Loader alternativo fallito: {e}")
+
+            if not documents:
+                logger.warning(f"Nessun documento PDF trovato in '{config.pdf_directory}'.")
+                print("Assicurati che la directory contenga file PDF validi e leggibili.")
+                return None
+
+            logger.info(f"Totale documenti caricati: {len(documents)}")
+
+            # Debug approfondito del contenuto
+            if not debug_pdf_content(documents):
+                print("\n🔧 SUGGERIMENTI PER RISOLVERE IL PROBLEMA:")
+                print("1. Verifica che i PDF non siano protetti da password")
+                print("2. Verifica che i PDF non siano solo immagini scansionate")
+                print("3. Prova a convertire i PDF in formato testo standard")
+                print("4. Usa strumenti come 'pdfinfo' o 'pdftotext' per testare i PDF")
+                print("5. Installa parser aggiuntivi: pip install unstructured pdfplumber pymupdf")
+
+                # Mostra informazioni sui file
+                print(f"\n📁 FILE NELLA DIRECTORY {config.pdf_directory}:")
+                for filename in os.listdir(config.pdf_directory):
                     if filename.lower().endswith('.pdf'):
-                        file_path = os.path.join(PDF_DIRECTORY_PATH, filename)
-                        try:
-                            alt_loader = UnstructuredPDFLoader(file_path)
-                            file_docs = alt_loader.load()
-                            alternative_docs.extend(file_docs)
-                            logger.info(f"UnstructuredPDFLoader caricato {len(file_docs)} docs da {filename}")
-                        except Exception as e:
-                            logger.warning(f"UnstructuredPDFLoader fallito per {filename}: {e}")
-                
-                if len(alternative_docs) > len(documents):
-                    logger.info(f"UnstructuredPDFLoader più efficace: {len(alternative_docs)} vs {len(documents)}")
-                    documents = alternative_docs
-                    
-            except ImportError:
-                logger.warning("UnstructuredPDFLoader non disponibile, installa con: pip install unstructured")
-            except Exception as e:
-                logger.warning(f"Loader alternativo fallito: {e}")
-        
-        if not documents:
-            logger.warning(f"Nessun documento PDF trovato in '{PDF_DIRECTORY_PATH}'.")
-            print("Assicurati che la directory contenga file PDF validi e leggibili.")
-            return None
-        
-        logger.info(f"Totale documenti caricati: {len(documents)}")
-        
-        # Debug approfondito del contenuto
-        if not debug_pdf_content(documents):
-            print("\n🔧 SUGGERIMENTI PER RISOLVERE IL PROBLEMA:")
-            print("1. Verifica che i PDF non siano protetti da password")
-            print("2. Verifica che i PDF non siano solo immagini scansionate")
-            print("3. Prova a convertire i PDF in formato testo standard")
-            print("4. Usa strumenti come 'pdfinfo' o 'pdftotext' per testare i PDF")
-            print("5. Installa parser aggiuntivi: pip install unstructured pdfplumber pymupdf")
-            
-            # Mostra informazioni sui file
-            print(f"\n📁 FILE NELLA DIRECTORY {PDF_DIRECTORY_PATH}:")
-            for filename in os.listdir(PDF_DIRECTORY_PATH):
-                if filename.lower().endswith('.pdf'):
-                    file_path = os.path.join(PDF_DIRECTORY_PATH, filename)
-                    file_size = os.path.getsize(file_path) / 1024 / 1024  # MB
-                    print(f"   - {filename} ({file_size:.1f} MB)")
-            
-            # Chiedi all'utente se vuole procedere comunque
-            logger.error("Nessun contenuto significativo trovato nei PDF. Impossibile procedere.")
-            raise ValueError("Nessun contenuto significativo trovato nei PDF. Controlla i file e riprova.")
-        
-        return documents
-        
-    except Exception as e:
-        logger.error(f"Errore nel caricamento dei documenti: {e}")
-        print(f"Errore nel caricamento: {e}")
-        
-        # Suggerisci alternative
-        print("\n🔧 ALTERNATIVE DA PROVARE:")
-        print("1. Installare librerie aggiuntive:")
-        print("   pip install pypdf2 pdfplumber pymupdf unstructured")
-        print("2. Convertire i PDF manualmente in formato testo")
-        print("3. Verificare i permessi di accesso ai file")
-        print("4. Testare manualmente con: pdftotext file.pdf")
-        
-        raise
+                        file_path = os.path.join(config.pdf_directory, filename)
+                        file_size = os.path.getsize(file_path) / 1024 / 1024  # MB
+                        print(f"   - {filename} ({file_size:.1f} MB)")
+
+                # Chiedi all'utente se vuole procedere comunque
+                logger.error("Nessun contenuto significativo trovato nei PDF. Impossibile procedere.")
+                raise ValueError("Nessun contenuto significativo trovato nei PDF. Controlla i file e riprova.")
+
+            # Garbage collection dopo il caricamento dei documenti
+            import gc
+            collected = gc.collect()
+            if collected > 0:
+                logger.info(f"Garbage collection dopo caricamento documenti: {collected} oggetti rimossi")
+
+            return documents
+
+        except Exception as e:
+            logger.error(f"Errore nel caricamento dei documenti: {e}")
+            print(f"Errore nel caricamento: {e}")
+
+            # Suggerisci alternative
+            print("\n🔧 ALTERNATIVE DA PROVARE:")
+            print("1. Installare librerie aggiuntive:")
+            print("   pip install pypdf2 pdfplumber pymupdf unstructured")
+            print("2. Convertire i PDF manualmente in formato testo")
+            print("3. Verificare i permessi di accesso ai file")
+            print("4. Testare manualmente con: pdftotext file.pdf")
+
+            raise
 
 def debug_text_chunks(text_chunks):
     """Debug dei chunk di testo creati."""
@@ -336,6 +307,145 @@ def debug_text_chunks(text_chunks):
     
     return meaningful_chunks > 0
 
+class ChainOfThoughtRetriever(BaseRetriever):
+    """
+    Retriever che utilizza Chain-of-Thought reasoning per analizzare la query
+    e pianificare una strategia di ricerca ottimale.
+    """
+
+    def __init__(self, base_retriever, config):
+        super().__init__()
+        self.base_retriever = base_retriever
+        self.config = config
+        self.llm = None
+
+    def _get_llm(self):
+        """Lazy initialization dell'LLM per reasoning."""
+        if self.llm is None:
+            self.llm = LLMFactory.create_llm(
+                provider=self.config.llm_provider,
+                model=self.config.llm_model,
+                config=self.config,
+                temperature=0.1  # Bassa temperatura per reasoning consistente
+            )
+        return self.llm
+
+    def get_relevant_documents(self, query):
+        """
+        Utilizza Chain-of-Thought reasoning per recuperare documenti rilevanti.
+
+        Args:
+            query (str): La domanda dell'utente
+
+        Returns:
+            List[Document]: Documenti rilevanti recuperati attraverso reasoning
+        """
+        logger.info(f"Avvio Chain-of-Thought reasoning per query: {query[:100]}...")
+
+        try:
+            # STEP 1: Analisi della query con Chain-of-Thought
+            llm = self._get_llm()
+
+            reasoning_prompt = PromptTemplate(
+                input_variables=["question"],
+                template=CHAIN_OF_THOUGHT_PROMPT
+            )
+
+            logger.info("Esecuzione analisi Chain-of-Thought...")
+            reasoning_response = llm.invoke(reasoning_prompt.format(question=query))
+
+            # STEP 2: Estrai le query di ricerca dal reasoning
+            search_queries = self._extract_search_queries(reasoning_response, query)
+            logger.info(f"Generate {len(search_queries)} query di ricerca specifiche")
+
+            # STEP 3: Esegui ricerche sequenziali
+            all_documents = []
+            collected_info = []
+
+            for i, search_query in enumerate(search_queries, 1):
+                logger.info(f"Esecuzione ricerca {i}/{len(search_queries)}: {search_query[:80]}...")
+
+                # Ricerca documenti per questa query specifica
+                docs = self.base_retriever.get_relevant_documents(search_query)
+
+                # Evita duplicati mantenendo solo documenti nuovi
+                new_docs = []
+                for doc in docs:
+                    doc_content = doc.page_content[:200]  # Prime 200 char per confronto
+                    if not any(doc_content in existing.page_content for existing in all_documents):
+                        new_docs.append(doc)
+
+                all_documents.extend(new_docs[:2])  # Max 2 docs per query per evitare overload
+
+                # Estrai informazioni chiave per il prossimo step
+                if new_docs:
+                    key_info = self._extract_key_information(new_docs, search_query)
+                    collected_info.append(f"Ricerca {i}: {key_info}")
+
+            logger.info(f"Chain-of-Thought completato: {len(all_documents)} documenti recuperati")
+
+            # Limita il numero totale di documenti per performance
+            return all_documents[:self.config.retriever_k] if all_documents else []
+
+        except Exception as e:
+            logger.error(f"Errore in Chain-of-Thought reasoning: {e}")
+            logger.info("Fallback a ricerca standard...")
+            return self.base_retriever.get_relevant_documents(query)
+
+    def _extract_search_queries(self, reasoning_response, original_query):
+        """Estrae le query di ricerca dal testo di reasoning."""
+        try:
+            # Cerca sezioni che contengono query numerate
+            lines = reasoning_response.split('\n')
+            queries = []
+
+            for line in lines:
+                line = line.strip()
+                # Cerca pattern come "1. [query]" o "Prima ricerca: [query]"
+                if any(pattern in line.lower() for pattern in ['1.', '2.', '3.', '4.', 'prima ricerca', 'seconda ricerca', 'terza ricerca']):
+                    # Pulisci la line da numerazione e formattazione
+                    clean_query = line
+                    for prefix in ['1.', '2.', '3.', '4.', 'Prima ricerca:', 'Seconda ricerca:', 'Terza ricerca:', 'Quarta ricerca:']:
+                        clean_query = clean_query.replace(prefix, '').strip()
+
+                    # Rimuovi brackets e altri caratteri di formattazione
+                    clean_query = clean_query.replace('[', '').replace(']', '').strip()
+
+                    if clean_query and len(clean_query) > 10:  # Query ragionevole
+                        queries.append(clean_query)
+
+            # Se non troviamo query strutturate, fallback a query generiche
+            if not queries:
+                queries = [
+                    original_query,  # Query originale
+                    f"specifiche tecniche {original_query}",  # Versione tech specs
+                    f"procedure manutenzione {original_query}"  # Versione maintenance
+                ]
+
+            return queries[:4]  # Max 4 query per performance
+
+        except Exception as e:
+            logger.warning(f"Errore estrazione query: {e}")
+            return [original_query]
+
+    def _extract_key_information(self, documents, search_query):
+        """Estrae informazioni chiave dai documenti per la query corrente."""
+        try:
+            if not documents:
+                return "Nessuna informazione trovata"
+
+            # Combina contenuto dei documenti (primi 300 caratteri di ciascuno)
+            combined_content = "\n".join([doc.page_content[:300] for doc in documents])
+
+            # Estrai punti chiave rilevanti per la query
+            key_points = combined_content[:500]  # Limita per performance
+            return f"Query '{search_query[:50]}...': {key_points[:200]}..."
+
+        except Exception as e:
+            logger.warning(f"Errore estrazione informazioni: {e}")
+            return "Informazioni estratte con errori"
+
+
 def create_chatbot(retriever_type="standard"):
     """
     Funzione principale per creare e configurare il chatbot.
@@ -343,108 +453,174 @@ def create_chatbot(retriever_type="standard"):
     """
     # Validazione ambiente
     # Per i deploy semplici, creiamo le directory se non esistono
-    if not os.path.exists(PDF_DIRECTORY_PATH):
-        os.makedirs(PDF_DIRECTORY_PATH)
-        logger.warning(f"Directory PDF '{PDF_DIRECTORY_PATH}' creata, ma è vuota. Assicurati di aggiungere i PDF al repository.")
-    os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
+    if not os.path.exists(config.pdf_directory):
+        os.makedirs(config.pdf_directory)
+        logger.warning(f"Directory PDF '{config.pdf_directory}' creata, ma è vuota. Assicurati di aggiungere i PDF al repository.")
+    os.makedirs(config.vector_store_directory, exist_ok=True)
     validate_environment()
     
     final_retriever = None
-    base_embeddings = initialize_embeddings()
+    base_embeddings = None  # Inizializzeremo solo se necessario
 
     if retriever_type == "ensemble":
-        logger.info("Modalità Ensemble Retriever selezionata. Verrà creato un indice specifico per questa sessione (senza cache).")
-        
-        documents = load_and_validate_documents()
-        if not documents: return None
+        with monitor_memory_usage("ensemble_retriever_creation"):
+            logger.info("Modalità Ensemble Retriever selezionata. Verrà creato un indice specifico per questa sessione (senza cache).")
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = text_splitter.split_documents(documents)
-        logger.info(f"Documenti suddivisi in {len(chunks)} chunks per la modalità Ensemble.")
+            # Inizializza embeddings solo per ensemble (che non usa cache)
+            if base_embeddings is None:
+                base_embeddings = initialize_embeddings()
 
-        bm25_retriever = BM25Retriever.from_documents(chunks)
-        bm25_retriever.k = RETRIEVER_K
+            documents = load_and_validate_documents()
+            if not documents: return None
 
-        vectorstore = FAISS.from_documents(chunks, base_embeddings)
-        faiss_retriever = vectorstore.as_retriever(search_kwargs={"k": RETRIEVER_K})
+            with monitor_memory_usage("document_splitting"):
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=config.chunk_size,
+                    chunk_overlap=config.chunk_overlap
+                )
+                chunks = text_splitter.split_documents(documents)
+                logger.info(f"Documenti suddivisi in {len(chunks)} chunks per la modalità Ensemble.")
 
-        final_retriever = EnsembleRetriever(
-            retrievers=[bm25_retriever, faiss_retriever],
-            weights=[0.5, 0.5]
-        )
+            with monitor_memory_usage("bm25_retriever_creation"):
+                bm25_retriever = BM25Retriever.from_documents(chunks)
+                bm25_retriever.k = config.retriever_k
+
+            with monitor_memory_usage("faiss_vectorstore_creation"):
+                vectorstore = FAISS.from_documents(chunks, base_embeddings)
+                faiss_retriever = vectorstore.as_retriever(search_kwargs={"k": config.retriever_k})
+
+            final_retriever = EnsembleRetriever(
+                retrievers=[bm25_retriever, faiss_retriever],
+                weights=[0.5, 0.5]
+            )
     else:
         # Logica esistente per le altre modalità con ParentDocumentRetriever e cache
-        embeddings_for_query = base_embeddings
-        if retriever_type == "hyde":
-            logger.info("Strategia di recupero HyDE selezionata.")
-            llm_for_hyde = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0)
-            hyde_prompt_template = """Sei un assistente utile. Il tuo compito è generare un breve paragrafo che risponda alla domanda dell'utente.
-Questo paragrafo verrà utilizzato per la ricerca semantica per trovare i documenti più pertinenti.
-Domanda: {question}
-Paragrafo di risposta ipotetico:"""
-            custom_prompt = PromptTemplate(input_variables=["question"], template=hyde_prompt_template)
-            embeddings_for_query = HypotheticalDocumentEmbedder.from_llm(
-                llm=llm_for_hyde,
-                base_embeddings=base_embeddings,
-                custom_prompt=custom_prompt
-            )
-
         base_retriever = None
-        faiss_index_path = os.path.join(VECTOR_STORE_PATH, "faiss_index")
-        faiss_core_index_file = os.path.join(faiss_index_path, "index.faiss")
-        docstore_path = os.path.join(VECTOR_STORE_PATH, "docstore.pkl")
+        faiss_index_path = config.faiss_index_path
+        faiss_core_index_file = config.faiss_core_index_file
+        docstore_path = config.docstore_path
 
         is_cache_valid = False
         # Controllo di robustezza: verifica che i file di cache esistano e non siano vuoti.
-        # Questo previene errori in ambienti cloud dove i file potrebbero essere creati ma vuoti.
-        if (os.path.exists(METADATA_FILE) and os.path.getsize(METADATA_FILE) > 0 and
+        # Usa SEMPRE la cache se esiste, senza controllare modifiche ai PDF.
+        # La rigenerazione avviene solo manualmente tramite il pulsante nell'interfaccia.
+        if (os.path.exists(config.metadata_file_path) and os.path.getsize(config.metadata_file_path) > 0 and
             os.path.exists(faiss_core_index_file) and os.path.getsize(faiss_core_index_file) > 0 and
             os.path.exists(docstore_path) and os.path.getsize(docstore_path) > 0):
             try:
-                with open(METADATA_FILE, 'r') as f: saved_metadata = json.load(f)
-                current_metadata = _get_pdf_metadata(PDF_DIRECTORY_PATH)
-                
-                # Confronto dettagliato per un logging più chiaro
-                saved_files = set(saved_metadata.keys())
-                current_files = set(current_metadata.keys())
-                added_files = current_files - saved_files
-                removed_files = saved_files - current_files
-                modified_files = {f for f in saved_files.intersection(current_files) if saved_metadata[f] != current_metadata[f]}
+                with open(config.metadata_file_path, 'r') as f: saved_metadata = json.load(f)
 
-                if not added_files and not removed_files and not modified_files:
-                    if current_metadata:
-                        logger.info("I documenti non sono cambiati. La cache è valida.")
-                        is_cache_valid = True
+                # Usa sempre la cache se esiste, indipendentemente dai cambiamenti ai PDF
+                if saved_metadata:
+                    logger.info("Cache degli embeddings trovata. Caricamento dalla cache (nessun controllo di modifiche).")
+                    is_cache_valid = True
                 else:
-                    logger.info("Rilevate modifiche nei documenti. L'indice verrà ricreato.")
-                    if added_files: logger.info(f"  File aggiunti: {list(added_files)}")
-                    if removed_files: logger.info(f"  File rimossi: {list(removed_files)}")
-                    if modified_files: logger.info(f"  File modificati: {list(modified_files)}")
+                    logger.info("Cache esistente ma vuota. L'indice verrà ricreato.")
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Errore nella lettura dei metadati: {e}. L'indice verrà ricreato.")
 
         if is_cache_valid:
             logger.info("L'indice è aggiornato. Caricamento del retriever dalla cache...")
             try:
+                # Prova a inizializzare embeddings solo se necessario
+                # In caso di errore (quota esaurita), usa un placeholder
+                if base_embeddings is None:
+                    try:
+                        base_embeddings = initialize_embeddings()
+                    except Exception as e:
+                        logger.warning(f"Impossibile inizializzare embeddings: {e}")
+                        logger.info("Tentativo di caricamento cache con embeddings placeholder...")
+
+                        # Crea embeddings placeholder che non fanno chiamate API
+                        from langchain.embeddings.base import Embeddings
+                        import numpy as np
+                        import faiss
+
+                        # Prova a determinare le dimensioni dall'indice esistente
+                        try:
+                            index = faiss.read_index(config.faiss_core_index_file)
+                            embedding_dim = index.d
+                            logger.info(f"Dimensioni embeddings rilevate dall'indice: {embedding_dim}")
+                        except:
+                            embedding_dim = 768  # Default per Google embeddings
+                            logger.warning(f"Impossibile rilevare dimensioni, uso default: {embedding_dim}")
+
+                        class PlaceholderEmbeddings(Embeddings):
+                            def __init__(self, dim):
+                                self.dim = dim
+
+                            def embed_documents(self, texts):
+                                return [np.zeros(self.dim).tolist() for _ in texts]
+
+                            def embed_query(self, text):
+                                return np.zeros(self.dim).tolist()
+
+                        base_embeddings = PlaceholderEmbeddings(embedding_dim)
+
+                embeddings_for_query = base_embeddings
+                if retriever_type == "hyde":
+                    logger.info("Strategia di recupero HyDE selezionata.")
+                    logger.warning("HyDE non disponibile con embeddings placeholder - uso standard")
+                    # Non possiamo usare HyDE con placeholder, fallback a standard
+
                 vectorstore = FAISS.load_local(faiss_index_path, embeddings_for_query, allow_dangerous_deserialization=True)
                 with open(docstore_path, "rb") as f: store = pickle.load(f)
                 base_retriever = ParentDocumentRetriever(
                     vectorstore=vectorstore, docstore=store,
-                    child_splitter=RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=100),
-                    parent_splitter=RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200),
+                    child_splitter=RecursiveCharacterTextSplitter(
+                        chunk_size=config.child_chunk_size,
+                        chunk_overlap=config.child_chunk_overlap
+                    ),
+                    parent_splitter=RecursiveCharacterTextSplitter(
+                        chunk_size=config.parent_chunk_size,
+                        chunk_overlap=config.parent_chunk_overlap
+                    ),
                 )
                 logger.info("Retriever di base caricato con successo dalla cache.")
             except Exception as e:
-                logger.error(f"Errore nel caricamento dalla cache: {e}. L'indice verrà ricreato.")
+                logger.warning(f"Errore nel caricamento dalla cache (possibile incompatibilità embeddings): {e}")
+                logger.info("Cache incompatibile con il nuovo provider embeddings. Usa il pulsante 'Rigenera embeddings' per ricreare la cache.")
                 base_retriever = None
         
         if base_retriever is None:
+            # Se la cache non è valida ma non vogliamo rigenerare automaticamente
+            if is_cache_valid is False:
+                logger.info("Nessuna cache valida trovata. Usa il pulsante 'Rigenera embeddings' per creare gli indici.")
+                return None
+
             logger.info("Creazione di un nuovo indice con ParentDocumentRetriever...")
+
+            # Inizializza embeddings solo se necessario per creare nuovo indice
+            if base_embeddings is None:
+                base_embeddings = initialize_embeddings()
+
+            embeddings_for_query = base_embeddings
+            if retriever_type == "hyde":
+                logger.info("Strategia di recupero HyDE selezionata.")
+                llm_for_hyde = LLMFactory.create_llm(
+                    provider=config.llm_provider,
+                    model=config.llm_model,
+                    config=config,
+                    temperature=0
+                )
+                custom_prompt = PromptTemplate(input_variables=["question"], template=HYDE_PROMPT)
+                embeddings_for_query = HypotheticalDocumentEmbedder.from_llm(
+                    llm=llm_for_hyde,
+                    base_embeddings=base_embeddings,
+                    custom_prompt=custom_prompt
+                )
+
             documents = load_and_validate_documents()
             if not documents: return None
 
-            parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-            child_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=100)
+            parent_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=config.parent_chunk_size,
+                chunk_overlap=config.parent_chunk_overlap
+            )
+            child_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=config.child_chunk_size,
+                chunk_overlap=config.child_chunk_overlap
+            )
             vectorstore = FAISS.from_texts(["_"], embedding=base_embeddings)
             vectorstore.delete(list(vectorstore.index_to_docstore_id.values()))
             store = InMemoryStore()
@@ -453,96 +629,73 @@ Paragrafo di risposta ipotetico:"""
                 child_splitter=child_splitter, parent_splitter=parent_splitter,
             )
             
-             # --- NUOVA LOGICA DI BATCHING E RETRY ---
+             # --- LOGICA DI BATCHING OTTIMIZZATA CON MEMORY MANAGEMENT ---
             # Definiamo una funzione interna con retry per aggiungere documenti in modo robusto
             @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
             def add_documents_with_retry(docs):
                 """Aggiunge un batch di documenti al retriever, con tentativi automatici."""
-                base_retriever.add_documents(docs, ids=None)
+                with monitor_memory_usage(f"add_documents_batch_{len(docs)}"):
+                    base_retriever.add_documents(docs, ids=None)
 
-            batch_size = 50  # Numero di documenti da processare in ogni batch
             total_docs = len(documents)
-            total_batches = (total_docs // batch_size) + (1 if total_docs % batch_size > 0 else 0)
-            
-            logger.info(f"Inizio aggiunta di {total_docs} documenti in {total_batches} batch...")
+            logger.info(f"Inizio processamento ottimizzato di {total_docs} documenti...")
 
-            for i in range(0, total_docs, batch_size):
-                batch_docs = documents[i:i + batch_size]
-                current_batch_num = (i // batch_size) + 1
-                logger.info(f"Elaborazione batch {current_batch_num}/{total_batches} (documenti da {i+1} a {min(i+batch_size, total_docs)})...")
+            # Usa il memory optimizer per determinare il batch size ottimale e processare i documenti
+            batch_num = 0
+            for batch in memory_optimizer.optimize_batch_processing(documents, "document_indexing"):
+                batch_num += 1
+                logger.info(f"Elaborazione batch ottimizzato {batch_num} con {len(batch)} documenti...")
                 try:
-                    add_documents_with_retry(batch_docs)
+                    add_documents_with_retry(batch)
                 except Exception as e:
-                    logger.error(f"Batch {current_batch_num} fallito dopo 5 tentativi: {e}")
+                    logger.error(f"Batch {batch_num} fallito dopo 5 tentativi: {e}")
                     raise  # Interrompe il processo se un batch fallisce definitivamente
 
-            logger.info("Tutti i batch sono stati elaborati con successo. ")
-            # --- FINE NUOVA LOGICA ---
+            logger.info("Tutti i batch sono stati elaborati con successo con ottimizzazioni memoria.")
+            # --- FINE LOGICA OTTIMIZZATA ---
 
-            logger.info("Salvataggio del nuovo indice su disco...")
-            base_retriever.vectorstore.save_local(faiss_index_path)
-            with open(docstore_path, "wb") as f: pickle.dump(base_retriever.docstore, f)
-            current_metadata = _get_pdf_metadata(PDF_DIRECTORY_PATH)
-            with open(METADATA_FILE, 'w') as f: json.dump(current_metadata, f, indent=2)
-            logger.info(f"Nuovo indice e metadati salvati in '{VECTOR_STORE_PATH}'.")
+            with monitor_memory_usage("save_index_to_disk"):
+                logger.info("Salvataggio del nuovo indice su disco...")
+                base_retriever.vectorstore.save_local(faiss_index_path)
+                with open(docstore_path, "wb") as f: pickle.dump(base_retriever.docstore, f)
+                current_metadata = _get_pdf_metadata(config.pdf_directory)
+                with open(config.metadata_file_path, 'w') as f: json.dump(current_metadata, f, indent=2)
+                logger.info(f"Nuovo indice e metadati salvati in '{config.vector_store_directory}'.")
+
+                # Log del report memoria finale
+                memory_report = memory_optimizer.get_memory_report()
+                logger.info(f"Report memoria finale: {memory_report['current_memory_mb']:.1f} MB utilizzati, "
+                           f"picco: {memory_report['peak_memory_mb']:.1f} MB")
 
         if retriever_type == "multi-query":
             logger.info("Applicazione del wrapper Multi-Query Retriever.")
-            llm_for_mq = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0)
+            llm_for_mq = LLMFactory.create_llm(
+                provider=config.llm_provider,
+                model=config.llm_model,
+                config=config,
+                temperature=0
+            )
             final_retriever = MultiQueryRetriever.from_llm(retriever=base_retriever, llm=llm_for_mq)
+        elif retriever_type == "chain-of-thought":
+            logger.info("Modalità Chain-of-Thought Reasoning selezionata.")
+            final_retriever = ChainOfThoughtRetriever(base_retriever, config)
         else:
             final_retriever = base_retriever
 
     # 4. Creazione della catena di Retrieval-Augmented Generation (RAG)
     try:
-        logger.info(f"Utilizzo del modello LLM: {LLM_MODEL_NAME}")
-        llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0.7)
+        logger.info(f"Utilizzo del modello LLM: {config.llm_model}")
+        llm = LLMFactory.create_llm(
+            provider=config.llm_provider,
+            model=config.llm_model,
+            config=config,
+            temperature=0.7
+        )
 
-        # Creiamo un prompt personalizzato per guidare il comportamento del modello
-        prompt_template = """
-        Sei BearX, un assistente tecnico specializzato in ingegneria meccanica e tecnologia dei cuscinetti, con esperienza in applicazioni industriali.
-
-        **RUOLO E COMPETENZE:**
-        - Esperto in progettazione, selezione e manutenzione di cuscinetti
-        - Specializzato in analisi di carichi, velocità e condizioni operative
-        - Competente in standard tecnici (ISO, DIN, ANSI) e specifiche costruttive
-        - Esperto in lubrificazione, materiali e trattamenti termici
-        - Conoscitore di applicazioni industriali (macchine utensili, motori, pompe, etc.)
-
-        **REGOLE FONDAMENTALI:**
-        1. **BASATI SOLO SUL CONTESTO**: Usa esclusivamente le informazioni fornite nei documenti tecnici
-        2. **PRECISIONE TECNICA**: Riporta esattamente dati, formule, specifiche e unità di misura
-        3. **CONTESTO INDUSTRIALE**: Considera sempre l'applicazione pratica e le condizioni operative
-        4. **STANDARD E NORME**: Cita sempre gli standard tecnici quando menzionati nei documenti
-
-        **ISTRUZIONI PER LA FORMATTAZIONE:**
-        - **Tabelle**: Per specifiche tecniche, dati dimensionali, carichi, velocità, temperature
-        - **Elenchi puntati**: Per caratteristiche, procedure, vantaggi/svantaggi, requisiti
-        - **Paragrafi**: Per spiegazioni concettuali, principi di funzionamento, analisi
-        - **Formule**: Riporta esattamente le formule matematiche presenti nei documenti
-        - **Unità di misura**: Mantieni sempre le unità originali (N, kN, rpm, °C, mm, etc.)
-
-        **ASPETTI TECNICI SPECIFICI:**
-        - **Materiali**: Specifica composizione, trattamenti termici, durezza
-        - **Lubrificazione**: Tipo, viscosità, intervalli di cambio, condizioni operative
-        - **Montaggio/Smontaggio**: Procedure, attrezzi, precauzioni, tolleranze
-        - **Manutenzione**: Controlli, ispezioni, sostituzioni, diagnostica
-        - **Applicazioni**: Contesto industriale, condizioni ambientali, carichi dinamici
-
-        **RISPOSTA IN ITALIANO** con terminologia tecnica appropriata.
-
-        ---
-        **CONTESTO FORNITO:**
-        {context}
-        ---
-        **DOMANDA:**
-        {question}
-
-        **RISPOSTA TECNICA:**
-"""
+        # Utilizziamo il prompt centralizzato dal modulo system_prompt
 
         PROMPT = PromptTemplate(
-            template=prompt_template, input_variables=["context", "question"]
+            template=EXPERT_PROMPT, input_variables=["context", "question"]
         )
 
         # Creiamo la catena che combina il recupero di informazioni (retriever) e il LLM
@@ -561,12 +714,55 @@ Paragrafo di risposta ipotetico:"""
         logger.error(f"Errore nella creazione della catena QA: {e}")
         raise
 
+def log_memory_stats_if_enabled():
+    """Log dettagliato delle statistiche memoria se il debug è abilitato."""
+    if logger.isEnabledFor(logging.INFO):
+        memory_report = memory_optimizer.get_memory_report()
+        logger.info("=== MEMORY REPORT ===")
+        logger.info(f"Memoria corrente: {memory_report['current_memory_mb']:.1f} MB")
+        logger.info(f"Memoria baseline: {memory_report['baseline_memory_mb']:.1f} MB")
+        logger.info(f"Delta: {memory_report['delta_mb']:+.1f} MB")
+        logger.info(f"Picco memoria: {memory_report['peak_memory_mb']:.1f} MB")
+        logger.info(f"% processo: {memory_report['process_percent']:.1f}%")
+        logger.info(f"% sistema: {memory_report['system_percent']:.1f}%")
+        logger.info(f"Memoria disponibile: {memory_report['available_mb']:.1f} MB")
+
+        # Cache stats
+        cache_info = memory_report['cache_stats']['embed_query_cache']
+        if cache_info['currsize'] > 0:
+            hit_rate = cache_info['hits'] / (cache_info['hits'] + cache_info['misses']) * 100
+            logger.info(f"Cache embeddings: {cache_info['currsize']}/{cache_info['maxsize']} "
+                       f"(hit rate: {hit_rate:.1f}%)")
+        logger.info("====================")
+
+def cleanup_memory_if_needed():
+    """Pulisce la memoria se necessario basandosi sui thresholds."""
+    from utils import clear_caches
+
+    memory_info = memory_optimizer.monitor.get_memory_info()
+
+    # Cleanup aggressivo se la memoria è alta
+    if memory_info['system_percent'] > 90 or memory_info['percent'] > 80:
+        logger.warning(f"Alta pressione memoria rilevata (sistema: {memory_info['system_percent']:.1f}%, "
+                      f"processo: {memory_info['percent']:.1f}%). Pulizia in corso...")
+        clear_caches()
+        import gc
+        collected = gc.collect()
+        logger.info(f"Cleanup memoria completato. Oggetti rimossi: {collected}")
+
+        # Log memoria dopo cleanup
+        new_memory_info = memory_optimizer.monitor.get_memory_info()
+        logger.info(f"Memoria dopo cleanup: {new_memory_info['rss_mb']:.1f} MB "
+                   f"(processo: {new_memory_info['percent']:.1f}%)")
+
 def main():
     """
     Funzione che gestisce l'interazione con l'utente.
     """
     try:
-        qa_chain = create_chatbot()
+        with monitor_memory_usage("chatbot_initialization"):
+            qa_chain = create_chatbot()
+            log_memory_stats_if_enabled()
     except Exception as e:
         logger.error(f"Errore critico durante l'inizializzazione: {e}")
         print(f"Impossibile inizializzare il chatbot: {e}")
@@ -582,7 +778,9 @@ def main():
     print("Questa modalità migliora il contesto fornendo documenti più completi al modello.")
     print("Digita le tue domande sui documenti PDF caricati.")
     print("Comandi disponibili: 'esci', 'quit', 'exit' per terminare")
-    print("Comando speciale: 'debug' per analisi dettagliata del retriever\n")
+    print("Comando speciale: 'debug' per analisi dettagliata del retriever")
+    print("Comando speciale: 'memory' per statistiche memoria")
+    print("Comando speciale: 'llm' per visualizzare configurazione LLM\n")
 
     # Loop infinito per permettere all'utente di fare domande
     while True:
@@ -613,6 +811,72 @@ def main():
                     print(f"Errore nel debug: {e}")
                 continue
 
+            # Comando llm speciale per cambiare provider
+            if user_question.lower() == "llm":
+                print("\n=== CONFIGURAZIONE LLM ===")
+                from llm_providers import LLMFactory
+
+                available = LLMFactory.get_available_models()
+                print("Provider disponibili:")
+                for i, (provider, models) in enumerate(available.items(), 1):
+                    current = "(ATTUALE)" if provider == config.llm_provider else ""
+                    print(f"  {i}. {provider} {current}")
+                    if models["llm"]:
+                        print(f"     LLM: {', '.join(models['llm'][:3])}{'...' if len(models['llm']) > 3 else ''}")
+                    if models["embeddings"]:
+                        print(f"     Embeddings: {', '.join(models['embeddings'][:2])}{'...' if len(models['embeddings']) > 2 else ''}")
+
+                print(f"\nAttuale: {config.llm_provider}/{config.llm_model}")
+                print(f"Embeddings: {config.embedding_provider}/{config.embedding_model}")
+                print("Per cambiare provider, modifica LLM_PROVIDER nel file .env")
+                print("===========================")
+                continue
+
+            # Comando memory speciale
+            if user_question.lower() == "memory":
+                print("\n=== STATISTICHE MEMORIA ===")
+                memory_report = memory_optimizer.get_memory_report()
+                print(f"Memoria corrente: {memory_report['current_memory_mb']:.1f} MB")
+                if memory_report['baseline_memory_mb']:
+                    print(f"Memoria baseline: {memory_report['baseline_memory_mb']:.1f} MB")
+                    print(f"Delta: {memory_report['delta_mb']:+.1f} MB")
+                print(f"Picco memoria: {memory_report['peak_memory_mb']:.1f} MB")
+                print(f"% processo: {memory_report['process_percent']:.1f}%")
+                print(f"% sistema: {memory_report['system_percent']:.1f}%")
+                print(f"Memoria disponibile: {memory_report['available_mb']:.1f} MB")
+
+                cache_info = memory_report['cache_stats']['embed_query_cache']
+                if cache_info['currsize'] > 0:
+                    hit_rate = cache_info['hits'] / (cache_info['hits'] + cache_info['misses']) * 100
+                    print(f"Cache embeddings: {cache_info['currsize']}/{cache_info['maxsize']} "
+                          f"(hit rate: {hit_rate:.1f}%)")
+                print("===========================")
+
+                # Cleanup se necessario
+                cleanup_memory_if_needed()
+                continue
+
+            # Comando llm speciale
+            if user_question.lower() == "llm":
+                print("\n=== CONFIGURAZIONE LLM ATTUALE ===")
+                print(f"Provider LLM: {config.llm_provider}")
+                print(f"Modello LLM: {config.llm_model}")
+                print(f"Provider Embeddings: {config.embedding_provider}")
+                print(f"Modello Embeddings: {config.embedding_model}")
+
+                print("\n=== MODELLI DISPONIBILI ===")
+                available_models = LLMFactory.get_available_models()
+                for provider, models in available_models.items():
+                    if models["llm"]:
+                        print(f"\n{provider.upper()} LLM:")
+                        for model in models["llm"]:
+                            current = " (ATTUALE)" if provider == config.llm_provider and model == config.llm_model else ""
+                            print(f"  - {model}{current}")
+
+                print("\nPer cambiare modello, modifica il file .env e riavvia l'applicazione")
+                print("================================")
+                continue
+
             # --- PASSO DI DEBUG: Controlla cosa recupera il retriever ---
             try:
                 retriever = qa_chain.retriever
@@ -640,29 +904,33 @@ def main():
                 logger.error(f"Errore durante il recupero manuale per il debug: {e}")
                 print(f"Errore nel debug del retriever: {e}")
 
-            # Eseguiamo la catena con la domanda dell'utente
-            try:
-                response = qa_chain.invoke({"query": user_question})
-                
-                # Stampiamo la risposta
-                print("\n--- Risposta ---")
-                print(response["result"])
+            # Eseguiamo la catena con la domanda dell'utente con monitoraggio memoria
+            with monitor_memory_usage(f"query_processing"):
+                try:
+                    response = qa_chain.invoke({"query": user_question})
 
-                # Opzionale: stampare i documenti sorgente usati per la risposta
-                print("\n--- Fonti Utilizzate ---")
-                if response["source_documents"]:
-                    for source in response["source_documents"]:
-                        source_file = os.path.basename(source.metadata.get('source', 'File sconosciuto'))
-                        print(f"- File: {source_file}")
-                        # print(f"  Contenuto: {source.page_content[:200]}...") # Decommenta per vedere un'anteprima del chunk
-                else:
-                    print("- Nessuna fonte specifica identificata")
-                print("--------------------")
-                
-            except Exception as e:
-                logger.error(f"Errore durante l'elaborazione della domanda: {e}")
-                print(f"Errore nell'elaborazione della domanda: {e}")
-                print("Riprova con una domanda diversa.")
+                    # Stampiamo la risposta
+                    print("\n--- Risposta ---")
+                    print(response["result"])
+
+                    # Opzionale: stampare i documenti sorgente usati per la risposta
+                    print("\n--- Fonti Utilizzate ---")
+                    if response["source_documents"]:
+                        for source in response["source_documents"]:
+                            source_file = os.path.basename(source.metadata.get('source', 'File sconosciuto'))
+                            print(f"- File: {source_file}")
+                            # print(f"  Contenuto: {source.page_content[:200]}...") # Decommenta per vedere un'anteprima del chunk
+                    else:
+                        print("- Nessuna fonte specifica identificata")
+                    print("--------------------")
+
+                    # Cleanup periodico della memoria
+                    cleanup_memory_if_needed()
+
+                except Exception as e:
+                    logger.error(f"Errore durante l'elaborazione della domanda: {e}")
+                    print(f"Errore nell'elaborazione della domanda: {e}")
+                    print("Riprova con una domanda diversa.")
                 
         except KeyboardInterrupt:
             print("\n\nInterruzione da tastiera. Arrivederci!")
