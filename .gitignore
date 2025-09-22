@@ -4,5 +4,4 @@ __pycache__/
 *.pyo
 
 # File di credenziali
-.env
-*.env
+.ena
