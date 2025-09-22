@@ -310,12 +310,15 @@ class ChainOfThoughtRetriever(BaseRetriever):
     Retriever che utilizza Chain-of-Thought reasoning per analizzare la query
     e pianificare una strategia di ricerca ottimale.
     """
+    base_retriever: object
+    config: object
+    llm: object = None
 
-    def __init__(self, base_retriever, config):
-        super().__init__()
-        self.base_retriever = base_retriever
-        self.config = config
-        self.llm = None
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(self, base_retriever, config, **kwargs):
+        super().__init__(base_retriever=base_retriever, config=config, **kwargs)
 
     def _get_llm(self):
         """Lazy initialization dell'LLM per reasoning."""
