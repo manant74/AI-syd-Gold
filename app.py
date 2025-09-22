@@ -1,5 +1,3 @@
-# /progetto_chatbot_pdf/app.py
-
 import os
 import json
 import hashlib
