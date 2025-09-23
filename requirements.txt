@@ -11,3 +11,9 @@ pypdf
 unstructured[pdf]
 tiktoken
 rank_bm25
+# Multimodal dependencies
+pytesseract
+opencv-python
+pillow
+pdf2image
+pymupdf

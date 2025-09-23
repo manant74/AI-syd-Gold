@@ -187,15 +187,44 @@ def debug_pdf_content(documents):
     return True
 
 def load_and_validate_documents():
-    """Carica i documenti PDF e verifica che non siano vuoti, con test di loader alternativi."""
+    """Carica i documenti PDF e verifica che non siano vuoti, con test di loader alternativi e supporto multimodale."""
     with monitor_memory_usage("load_and_validate_documents"):
         try:
-            # Prova il loader principale
+            # Prova il loader principale per testo
             logger.info("Tentativo di caricamento documenti con PyPDFDirectoryLoader...")
             loader = PyPDFDirectoryLoader(config.pdf_directory, glob="**/*.pdf")
             documents = loader.load()
 
             logger.info(f"PyPDFDirectoryLoader ha caricato {len(documents)} documenti")
+
+            # Aggiungi processamento multimodale
+            multimodal_documents = []
+            if config.enable_multimodal:
+                logger.info("Avvio processamento multimodale per estrazione immagini/diagrammi...")
+                from extensions.multimodal import MultimodalDocumentProcessor
+
+                multimodal_processor = MultimodalDocumentProcessor(config)
+
+                # Processa ogni PDF per contenuto multimodale
+                pdf_files = [f for f in os.listdir(config.pdf_directory) if f.lower().endswith('.pdf')]
+                total_multimodal_docs = 0
+
+                for pdf_file in pdf_files:
+                    pdf_path = os.path.join(config.pdf_directory, pdf_file)
+                    try:
+                        mm_docs, stats = multimodal_processor.process_pdf_document(pdf_path)
+                        multimodal_documents.extend(mm_docs)
+                        total_multimodal_docs += len(mm_docs)
+
+                        logger.info(f"PDF {pdf_file}: {stats.images_processed} immagini processate, {len(mm_docs)} documenti estratti")
+                    except Exception as e:
+                        logger.warning(f"Errore processamento multimodale {pdf_file}: {e}")
+
+                logger.info(f"Processamento multimodale completato: {total_multimodal_docs} documenti da immagini")
+
+                # Combina documenti testuali e multimodali
+                documents.extend(multimodal_documents)
+                logger.info(f"Totale documenti (testo + multimodale): {len(documents)}")
         
             # Se non abbiamo documenti o sono insufficienti, proviamo loader alternativi
             if not documents or len(documents) < 5:

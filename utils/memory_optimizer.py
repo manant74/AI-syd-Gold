@@ -201,7 +201,6 @@ def memory_aware_cache(maxsize: int = 128, typed: bool = False):
     return decorator
 
 
-@memory_aware_cache(maxsize=256)
 def cached_embed_query(embeddings_model, query_text: str) -> List[float]:
     """
     Cache per query di embedding con gestione intelligente della memoria.
@@ -357,11 +356,35 @@ class MemoryOptimizer:
 
             return embeddings
 
-        # Aggiungi metodi ottimizzati al modello
-        base_embeddings.embed_query = optimized_embed_query
-        base_embeddings.embed_documents = optimized_embed_documents
+        # Crea wrapper per HuggingFace che non supporta assegnazione dinamica
+        if hasattr(base_embeddings, '__class__') and 'HuggingFace' in str(base_embeddings.__class__):
+            class OptimizedEmbeddingsWrapper:
+                def __init__(self, base_embeddings):
+                    self._base = base_embeddings
+                    # Copia tutti gli attributi originali
+                    for attr in dir(base_embeddings):
+                        if not attr.startswith('_') and not callable(getattr(base_embeddings, attr)):
+                            setattr(self, attr, getattr(base_embeddings, attr))
 
-        return base_embeddings
+                def embed_query(self, text):
+                    return optimized_embed_query(text)
+
+                def embed_documents(self, texts):
+                    return optimized_embed_documents(texts)
+
+                def __call__(self, text):
+                    """Supporto per compatibilità FAISS - chiama embed_query."""
+                    return self.embed_query(text)
+
+                def __getattr__(self, name):
+                    return getattr(self._base, name)
+
+            return OptimizedEmbeddingsWrapper(base_embeddings)
+        else:
+            # Per altri tipi di embeddings, usa assegnazione diretta
+            base_embeddings.embed_query = optimized_embed_query
+            base_embeddings.embed_documents = optimized_embed_documents
+            return base_embeddings
 
     def get_memory_report(self) -> Dict[str, Any]:
         """

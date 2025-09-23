@@ -7,6 +7,9 @@ nest_asyncio.apply()
 import streamlit as st
 import time
 import os
+import fitz  # PyMuPDF per rendering PDF
+from PIL import Image
+import io
 from app import create_chatbot
 from config import AppConfig
 from llm_providers import LLMFactory
@@ -14,15 +17,122 @@ from llm_providers import LLMFactory
 # Configurazione centralizzata
 config = AppConfig.from_env()
 
+# --- Funzioni per PDF Viewer ---
+@st.cache_data
+def render_pdf_page(pdf_path, page_num=0, zoom=1.5):
+    """Renderizza una pagina PDF come immagine (con cache)."""
+    try:
+        doc = fitz.open(pdf_path)
+        if page_num >= doc.page_count:
+            page_num = 0
+
+        page = doc[page_num]
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        img_data = pix.tobytes("png")
+        doc.close()
+
+        return img_data  # Ritorna bytes per il caching
+    except Exception as e:
+        st.error(f"Errore nel caricamento PDF: {e}")
+        return None
+
+def display_pdf_page(pdf_path, page_num=0, zoom=1.5):
+    """Wrapper per visualizzare la pagina PDF."""
+    img_data = render_pdf_page(pdf_path, page_num, zoom)
+    if img_data:
+        return Image.open(io.BytesIO(img_data))
+    return None
+
+def show_pdf_panel(container):
+    """Mostra il pannello PDF in un container."""
+    if not st.session_state.get('show_pdf_viewer', False):
+        return
+
+    pdf_filename = st.session_state.get('pdf_to_show', '')
+    if not pdf_filename:
+        return
+
+    with container:
+        # Header del pannello PDF
+        col_header, col_close = st.columns([4, 1])
+
+        with col_header:
+            st.markdown(f"### 📄 {pdf_filename}")
+
+        with col_close:
+            if st.button("❌", help="Chiudi PDF"):
+                st.session_state.show_pdf_viewer = False
+                st.rerun()
+
+        # Trova il path completo del PDF
+        pdf_path = os.path.join(config.pdf_directory, pdf_filename)
+
+        if not os.path.exists(pdf_path):
+            st.error(f"File PDF non trovato: {pdf_filename}")
+            return
+
+        try:
+            # Informazioni PDF
+            doc = fitz.open(pdf_path)
+            total_pages = doc.page_count
+            doc.close()
+
+            # Controlli in colonne
+            col_page, col_zoom = st.columns(2)
+
+            with col_page:
+                # Slider per selezione pagina
+                current_page = st.slider(
+                    f"Pagina (1-{total_pages}):",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=st.session_state.get('pdf_current_page', 1),
+                    key='pdf_page_slider'
+                )
+
+            with col_zoom:
+                # Controllo zoom
+                zoom_level = st.slider(
+                    "Zoom:",
+                    min_value=0.5,
+                    max_value=2.0,
+                    value=1.2,
+                    step=0.1,
+                    key='pdf_zoom_slider'
+                )
+
+            # Aggiorna pagina corrente
+            st.session_state.pdf_current_page = current_page
+
+            # Renderizza pagina
+            with st.spinner("Caricamento pagina..."):
+                img = display_pdf_page(pdf_path, current_page - 1, zoom_level)
+                if img:
+                    st.image(img, caption=f"Pagina {current_page}", use_column_width=True)
+                else:
+                    st.error("Impossibile caricare la pagina")
+
+        except Exception as e:
+            st.error(f"Errore: {e}")
+
 # --- Configurazione della Pagina Streamlit ---
 st.set_page_config(
     page_title="BearX Chatbot",
-    page_icon="🤖",
+    page_icon="☸️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🤖 BearX: conosco tutto sui Cuscinetti")
+# Inizializza session state per PDF viewer
+if 'show_pdf_viewer' not in st.session_state:
+    st.session_state.show_pdf_viewer = False
+if 'pdf_to_show' not in st.session_state:
+    st.session_state.pdf_to_show = None
+if 'pdf_current_page' not in st.session_state:
+    st.session_state.pdf_current_page = 1
+
+st.title("☸️ BearX: a bearings expert")
 st.caption("Fai domande sul mondo dei cuscinetti, proverò a rispondere basandomi sulla mia Knowledge Base.")
 
 # --- Sidebar per la Configurazione ---
@@ -224,59 +334,110 @@ if qa_chain is None:
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti oggi con i documenti tecnici?"}]
 
-# Mostra i messaggi precedenti
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Layout principale: chat a sinistra, PDF viewer a destra (quando attivo)
+if st.session_state.get('show_pdf_viewer', False):
+    col_chat, col_pdf = st.columns([2, 1])
+else:
+    col_chat = st.container()
+    col_pdf = None
 
-# --- Input dell'Utente e Generazione della Risposta ---
-if prompt := st.chat_input("Fai la tua domanda qui..."):
-    # Aggiungi il messaggio dell'utente alla cronologia
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+with col_chat:
+    # Mostra i messaggi precedenti
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    # Genera e mostra la risposta dell'assistente
-    with st.chat_message("assistant"):
-        with st.spinner("Sto cercando la risposta nei documenti..."):
-            try:
-                response = qa_chain.invoke({"query": prompt})
-                
-                # 1. Mostra la risposta principale
-                result = response.get("result", "Non sono riuscito a trovare una risposta.")
-                st.markdown(result)
+    # --- Input dell'Utente e Generazione della Risposta ---
+    if prompt := st.chat_input("Fai la tua domanda qui..."):
+        # Aggiungi il messaggio dell'utente alla cronologia
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-                # 2. Prepara il testo delle fonti per la cronologia (versione semplice)
-                sources_text_for_history = ""
-                source_documents = response.get("source_documents")
-                if source_documents:
-                    # Crea un elenco testuale semplice per la cronologia
-                    sources_text_for_history = "\n\n---\n*Fonti utilizzate:*"
-                    source_files = sorted(list(set(os.path.basename(doc.metadata.get('source', 'N/A')) for doc in source_documents)))
-                    sources_text_for_history += "\n- " + "\n- ".join(source_files) if source_files else " Nessuna fonte specifica identificata."
+        # Genera e mostra la risposta dell'assistente
+        with st.chat_message("assistant"):
+            with st.spinner("Sto cercando la risposta nei documenti..."):
+                try:
+                    response = qa_chain.invoke({"query": prompt})
+                    
+                    # 1. Mostra la risposta principale
+                    result = response.get("result", "Non sono riuscito a trovare una risposta.")
+                    st.markdown(result)
 
-                    # 3. Mostra le fonti in modo interattivo e dettagliato nell'interfaccia
-                    st.markdown("---")
-                    with st.expander("Vedi fonti e contesto utilizzato"):
-                        # Raggruppa i documenti per file sorgente per una visualizzazione pulita
-                        sources_by_file = {}
-                        for doc in source_documents:
-                            source_name = os.path.basename(doc.metadata.get('source', 'Sconosciuto'))
-                            if source_name not in sources_by_file:
-                                sources_by_file[source_name] = []
-                            sources_by_file[source_name].append(doc)
-                        
-                        for filename, docs in sorted(sources_by_file.items()):
-                            st.markdown(f"#### 📄 {filename}")
-                            for i, doc in enumerate(docs):
-                                st.info(f"**Contesto recuperato {i+1}:**\n\n" + doc.page_content)
-                
-                full_response_for_history = result + sources_text_for_history
+                    # 2. Prepara il testo delle fonti per la cronologia (versione semplice)
+                    sources_text_for_history = ""
+                    source_documents = response.get("source_documents")
+                    if source_documents:
+                        # Crea un elenco testuale semplice per la cronologia
+                        sources_text_for_history = "\n\n---\n*Fonti utilizzate:*"
+                        source_files = sorted(list(set(os.path.basename(doc.metadata.get('source', 'N/A')) for doc in source_documents)))
+                        sources_text_for_history += "\n- " + "\n- ".join(source_files) if source_files else " Nessuna fonte specifica identificata."
 
-            except Exception as e:
-                st.error(f"Si è verificato un errore durante l'elaborazione della tua domanda: {e}")
-                full_response_for_history = "Mi dispiace, si è verificato un errore. Riprova."
-                st.markdown(full_response_for_history)
+                        # 3. Mostra le fonti in modo interattivo e dettagliato nell'interfaccia
+                        st.markdown("---")
+                        with st.expander("Vedi fonti e contesto utilizzato"):
+                            # Raggruppa i documenti per file sorgente per una visualizzazione pulita
+                            sources_by_file = {}
+                            for doc in source_documents:
+                                source_name = os.path.basename(doc.metadata.get('source', 'Sconosciuto'))
+                                if source_name not in sources_by_file:
+                                    sources_by_file[source_name] = []
+                                sources_by_file[source_name].append(doc)
+                            
+                            for filename, docs in sorted(sources_by_file.items()):
+                                col1, col2 = st.columns([3, 1])
+
+                                with col1:
+                                    st.markdown(f"#### 📄 {filename}")
+
+                                with col2:
+                                    # Bottone per aprire PDF nella sidebar
+                                    if st.button(f"📖 Visualizza", key=f"view_pdf_{filename}"):
+                                        st.session_state.pdf_to_show = filename
+                                        st.session_state.show_pdf_sidebar = True
+                                        # Trova la prima pagina con contenuto di questo file
+                                        first_page = None
+                                        for doc in docs:
+                                            if doc.metadata.get('page'):
+                                                try:
+                                                    page_num = int(doc.metadata.get('page', 1))
+                                                    if first_page is None or page_num < first_page:
+                                                        first_page = page_num
+                                                except:
+                                                    pass
+                                        if first_page:
+                                            st.session_state.pdf_current_page = first_page
+                                        st.rerun()
+
+                                for i, doc in enumerate(docs):
+                                    page_num = doc.metadata.get('page', 'N/A')
+                                    page_info = f" (Pagina {page_num})" if page_num != 'N/A' else ""
+
+                                    # Container per contenuto e bottone pagina specifica
+                                    with st.container():
+                                        col_content, col_page_btn = st.columns([4, 1])
+
+                                        with col_content:
+                                            st.info(f"**Contesto recuperato {i+1}:**{page_info}\n\n" + doc.page_content)
+
+                                        with col_page_btn:
+                                            # Bottone per aprire direttamente questa pagina
+                                            if page_num != 'N/A' and st.button(f"Pag. {page_num}", key=f"goto_page_{filename}_{i}"):
+                                                st.session_state.pdf_to_show = filename
+                                                st.session_state.show_pdf_sidebar = True
+                                                st.session_state.pdf_current_page = int(page_num)
+                                                st.rerun()
+                    
+                    full_response_for_history = result + sources_text_for_history
+
+                except Exception as e:
+                    st.error(f"Si è verificato un errore durante l'elaborazione della tua domanda: {e}")
+                    full_response_for_history = "Mi dispiace, si è verificato un errore. Riprova."
+                    st.markdown(full_response_for_history)
 
     # Aggiungi la risposta completa dell'assistente alla cronologia
     st.session_state.messages.append({"role": "assistant", "content": full_response_for_history})
+
+# --- Visualizzazione PDF Sidebar ---
+# Questa funzione deve essere chiamata alla fine per gestire il PDF viewer
+## show_pdf_sidebar()

@@ -16,10 +16,10 @@ def build_cache():
     print("--- Inizio del processo di creazione della cache ---")
 
     # Opzionale ma consigliato: pulisce la cache precedente per una rigenerazione pulita
-    if os.path.exists(VECTOR_STORE_PATH):
-        print(f"Trovata una cache esistente in '{VECTOR_STORE_PATH}'. Verrà rimossa per garantirne la coerenza.")
+    if os.path.exists(config.vector_store_directory):
+        print(f"Trovata una cache esistente in '{config.vector_store_directory}'. Verrà rimossa per garantirne la coerenza.")
         try:
-            shutil.rmtree(VECTOR_STORE_PATH)
+            shutil.rmtree(config.vector_store_directory)
             print("Cache precedente rimossa con successo.")
         except OSError as e:
             print(f"Errore durante la rimozione della cache precedente: {e}")

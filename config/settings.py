@@ -55,6 +55,12 @@ class AppConfig:
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(levelname)s - %(message)s"
 
+    # === CONFIGURAZIONE MULTIMODALE ===
+    enable_multimodal: bool = True
+    ocr_confidence_threshold: int = 60
+    min_image_size: tuple = (100, 50)
+    cache_multimodal_results: bool = True
+
     # === CONFIGURAZIONE SICUREZZA ===
     google_api_key: Optional[str] = field(default=None, repr=False)
     openai_api_key: Optional[str] = field(default=None, repr=False)
@@ -108,6 +114,12 @@ class AppConfig:
             # Logging
             log_level=os.getenv("LOG_LEVEL", cls.log_level),
             log_format=os.getenv("LOG_FORMAT", cls.log_format),
+
+            # Multimodale
+            enable_multimodal=os.getenv("ENABLE_MULTIMODAL", "true").lower() in ("true", "1", "yes"),
+            ocr_confidence_threshold=int(os.getenv("OCR_CONFIDENCE_THRESHOLD", cls.ocr_confidence_threshold)),
+            min_image_size=tuple(map(int, os.getenv("MIN_IMAGE_SIZE", "100,50").split(","))),
+            cache_multimodal_results=os.getenv("CACHE_MULTIMODAL_RESULTS", "true").lower() in ("true", "1", "yes"),
 
             # Sicurezza
             google_api_key=os.getenv("GOOGLE_API_KEY"),

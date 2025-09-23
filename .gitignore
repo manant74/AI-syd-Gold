@@ -1,7 +1,32 @@
-# Cache e file generati localmente
+# File di configurazione con secrets
+.env
+
+# Cache e file generati da Python
 __pycache__/
 *.pyc
-*.pyo
 
-# File di credenziali
-.ena
+# Cache del Vector Store creata da build_cache.py
+vector_store_cache/
+
+# File di database
+feedback.db
+
+# File generati dal sistema operativo
+.DS_Store
+# File di configurazione con secrets
+.env
+
+# Cache e file generati da Python
+__pycache__/
+*.pyc
+
+# Cache del Vector Store creata da build_cache.py
+vector_store_cache/
+
+# File di database
+feedback.db
+
+# File generati dal sistema operativo
+.DS_Store
+Thumbs.db
+Thumbs.db

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python run_tests.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []
