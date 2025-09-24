@@ -12,7 +12,7 @@ from streamlit_modal import Modal
 
 from app import get_retriever, get_qa_chain
 from config import AppConfig
-from llm_providers import LLMFactory
+from config.llm_providers import LLMFactory
 
 config = AppConfig.from_env()
 

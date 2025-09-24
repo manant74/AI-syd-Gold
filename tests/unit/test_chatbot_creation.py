@@ -191,7 +191,7 @@ class TestPromptTemplates:
 
     def test_rag_prompt_template_structure(self):
         """Test struttura del template RAG."""
-        from system_prompt import EXPERT_PROMPT
+        from config.system_prompt import EXPERT_PROMPT
         template = EXPERT_PROMPT
 
         # Verifica che contenga le variabili necessarie
@@ -206,7 +206,7 @@ class TestPromptTemplates:
 
     def test_prompt_template_variables(self):
         """Test che il template possa essere formattato correttamente."""
-        from system_prompt import EXPERT_PROMPT
+        from config.system_prompt import EXPERT_PROMPT
         template = EXPERT_PROMPT
 
         # Test formattazione con variabili di esempio

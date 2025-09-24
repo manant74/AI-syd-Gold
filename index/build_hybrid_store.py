@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 # Aggiungi il percorso principale
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import AppConfig
 from app import initialize_embeddings

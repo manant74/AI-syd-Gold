@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Aggiungi il percorso principale
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 os.environ["EMBEDDING_PROVIDER"] = "huggingface"
 os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"

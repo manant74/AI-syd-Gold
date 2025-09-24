@@ -9,6 +9,9 @@ import shutil
 import pickle
 from pathlib import Path
 
+# Aggiungi il percorso principale
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # Configurazione diretta
 os.environ["EMBEDDING_PROVIDER"] = "huggingface"
 os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"

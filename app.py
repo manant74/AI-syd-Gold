@@ -6,12 +6,12 @@ from dotenv import load_dotenv
 
 # Import configurazione centralizzata
 from config import AppConfig
-from system_prompt import CHAIN_OF_THOUGHT_PROMPT, EXPERT_PROMPT
+from config.system_prompt import CHAIN_OF_THOUGHT_PROMPT, EXPERT_PROMPT
 from utils import MemoryOptimizer, monitor_memory_usage
 
 # Import delle classi necessarie da LangChain
 from langchain_community.document_loaders import PyPDFDirectoryLoader
-from llm_providers import LLMFactory
+from config.llm_providers import LLMFactory
 from langchain.prompts import PromptTemplate
 from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever

@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 # Aggiungi il percorso principale al PYTHONPATH
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config.settings import AppConfig
 from extensions.multimodal import MultimodalDocumentProcessor
