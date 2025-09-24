@@ -1,148 +1,437 @@
-# AI-syd-Gold - Chatbot PDF per Ingegneria Meccanica
+# AI-syd-Gold - Advanced PDF Chatbot for Mechanical Engineering
 
-Un chatbot intelligente specializzato in ingegneria dei materiali e meccanica, con focus sui cuscinetti, che utilizza documenti PDF tecnici per fornire risposte precise.
+🚀 **Un sistema RAG avanzato specializzato in ingegneria meccanica e cuscinetti**, che utilizza tecnologie multimodali, multiple strategie di retrieval, e supporto per diversi provider di AI.
 
-## 🚀 Setup Rapido
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.25+-red.svg)](https://streamlit.io)
+[![LangChain](https://img.shields.io/badge/LangChain-Latest-green.svg)](https://langchain.com)
 
-### 1. Installazione Dipendenze
+## 🌟 Caratteristiche Principali
+
+### 🧠 **Multi-Provider AI Support**
+- **Google**: Gemini 2.0, 2.5 Flash, 2.5 Pro
+- **OpenAI**: GPT-4o, o1-preview, o1-mini
+- **Anthropic**: Claude 3.5 Haiku, Claude 4 Sonnet/Opus
+- **Ollama**: Modelli locali (offline)
+
+### 🖼️ **Elaborazione Multimodale**
+- **OCR Integrato**: Estrazione testo da immagini e diagrammi tecnici
+- **Riconoscimento Intelligente**: Classificazione automatica di tabelle, formule, schemi
+- **Supporto PDF Ibrido**: Testo nativo + OCR per documenti scansionati
+- **Cache OCR**: Evita riprocessamento con sistema di cache intelligente
+
+### 💾 **Ottimizzazione Memoria**
+- **Monitoraggio Real-time**: Tracking utilizzo memoria con baseline e picchi
+- **Batch Processing Intelligente**: Dimensionamento dinamico basato su memoria disponibile
+- **Cache Memory-Aware**: LRU cache con cleanup automatico
+- **Garbage Collection Aggressivo**: Strategie GC per documenti di grandi dimensioni
+
+### 🔍 **Strategie di Retrieval Avanzate**
+- **Chain-of-Thought**: Ragionamento multi-step per query complesse
+- **Multi-Query**: Generazione automatica di strategie di ricerca multiple
+- **HyDE**: Hypothetical Document Embeddings per ricerca semantica migliorata
+- **Parent-Child Architecture**: Struttura gerarchica per preservazione contesto
+
+### 🎨 **Interfaccia Utente Evoluta**
+- **Visualizzatore PDF Integrato**: Navigazione pagine con link diretti alle fonti
+- **Configurazione Real-time**: Switch dinamico tra modelli e strategie
+- **Modalità Debug**: Strumenti per analizzare retrieval e performance
+- **Messaggi di Caricamento Creativi**: Indicatori di progresso a tema ingegneristico
+
+## 🚀 Quick Start
+
+### 1. **Setup Ambiente di Sviluppo**
 
 ```bash
-pip install -r requirements.txt
+# Clone repository
+git clone https://github.com/yourusername/AI-syd-Gold.git
+cd AI-syd-Gold
+
+# Installa dipendenze complete (include test e sviluppo)
+pip install -r requirements-dev.txt
 ```
 
-### 2. Configurazione API Google
+### 2. **Configurazione API Keys**
 
-1. Ottieni una chiave API da [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Crea un file `.env` basato su `env_template.txt`:
-
-   ```bash
-   cp env_template.txt .env
-   ```
-
-3. Modifica il file `.env` inserendo la tua chiave API:
-
-```text
-GOOGLE_API_KEY=your_actual_api_key_here
-```
-
-### 3. Aggiunta Documenti PDF
-
-Posiziona i tuoi documenti PDF tecnici nella cartella `pdfs/`.
-
-### 4. Creazione Cache
+Crea un file `.env` basato su `.env.example`:
 
 ```bash
-python build_cache.py
+cp .env.example .env
 ```
 
-### 5. Avvio Chatbot
+Configura le chiavi API necessarie:
+
+```env
+# Almeno uno dei seguenti provider
+GOOGLE_API_KEY=your_google_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Configurazione LLM (opzionale)
+LLM_PROVIDER=google                    # google, openai, anthropic, ollama
+LLM_MODEL_NAME=gemini-2.0-flash-exp   # Modello specifico
+
+# Configurazione Embedding (opzionale)
+EMBEDDING_PROVIDER=huggingface         # google, openai, huggingface
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# Ottimizzazioni Performance (opzionale)
+EMBEDDING_TIMEOUT=180
+EMBEDDING_RETRY_ATTEMPTS=3
+MEMORY_THRESHOLD_MB=2048
+```
+
+### 3. **Aggiunta Documenti PDF**
 
 ```bash
+# Aggiungi i tuoi PDF tecnici
+mkdir -p pdfs
+cp your_technical_documents.pdf pdfs/
+```
+
+### 4. **Costruzione Vector Store**
+
+```bash
+# Build completo con elaborazione multimodale
+python build_hybrid_store.py
+
+# Alternativa: build rapido (solo testo)
+python quick_vector_build.py
+```
+
+### 5. **Avvio Applicazione**
+
+```bash
+# Interfaccia web Streamlit
+streamlit run streamlit_app.py
+
+# CLI diretto (deprecato)
 python app.py
 ```
 
-## 🔧 Risoluzione Problemi
+## 🛠️ Deployment
 
-### Errore di Timeout durante la Creazione Cache
+### **Streamlit Cloud** (Consigliato)
 
-Se incontri errori come:
-
-```text
-Error embedding content: Timeout of 60.0s exceeded, last exception: 503 IOCP/Socket: Connection reset
+1. **Push su GitHub**:
+```bash
+git add .
+git commit -m "Ready for deployment"
+git push origin main
 ```
 
-#### Soluzioni
+2. **Deploy su Streamlit Cloud**:
+   - Vai su [share.streamlit.io](https://share.streamlit.io)
+   - Collega il repository GitHub
+   - Configura le variabili d'ambiente nella sezione "Advanced settings"
 
-1. **Verifica Connessione Internet**
-   - Assicurati di avere una connessione stabile
-   - Prova a disabilitare temporaneamente firewall/proxy
+3. **Variabili d'Ambiente su Streamlit Cloud**:
+```toml
+GOOGLE_API_KEY = "your_api_key"
+LLM_PROVIDER = "google"
+EMBEDDING_PROVIDER = "huggingface"
+```
 
-2. **Configurazione API**
-   - Verifica che la chiave API sia corretta nel file `.env`
-   - Controlla che la chiave abbia i permessi per l'API Gemini
-   - Verifica che la chiave non sia scaduta
-
-3. **Aumenta Timeout**
-   Modifica il file `.env`:
-
-   ```text
-   EMBEDDING_TIMEOUT=180
-   EMBEDDING_RETRY_ATTEMPTS=5
-   EMBEDDING_RETRY_DELAY=10
-   ```
-
-4. **Problemi di Rete**
-   - Se usi un proxy aziendale, configura le variabili d'ambiente:
-
-     ```bash
-     export HTTP_PROXY=http://proxy.company.com:8080
-     export HTTPS_PROXY=http://proxy.company.com:8080
-     ```
-
-5. **Alternative per Ambienti Limitati**
-   - Usa una connessione internet diversa
-   - Prova in orari di minor traffico
-   - Considera l'uso di un VPN
-
-### Altri Errori Comuni
-
-#### "File .env non trovato"
+### **Sviluppo Locale con Dev Container**
 
 ```bash
-cp env_template.txt .env
-# Poi modifica .env con la tua chiave API
+# Con VSCode + Dev Containers extension
+code .
+# Clicca "Reopen in Container" quando richiesto
 ```
 
-#### "Nessun file PDF trovato"
+### **GitHub Codespaces**
 
-- Assicurati che i PDF siano nella cartella `pdfs/`
-- Verifica che i PDF non siano protetti da password
-- Controlla che i PDF contengano testo (non solo immagini)
+1. Clicca il bottone "Code" → "Codespaces" → "Create codespace on main"
+2. Attendi setup automatico
+3. Configura `.env` con le API keys
+4. Run: `streamlit run streamlit_app.py`
 
-#### "Errore nel caricamento dei documenti"
-
-```bash
-pip install unstructured pdfplumber pymupdf
-```
-
-## 📁 Struttura Progetto
+## 📁 Architettura del Progetto
 
 ```text
 AI-syd-Gold/
-├── app.py                 # Chatbot principale
-├── build_cache.py         # Script per creare la cache
-├── streamlit_app.py       # Interfaccia web Streamlit
-├── requirements.txt       # Dipendenze Python
-├── env_template.txt       # Template configurazione
-├── pdfs/                 # Documenti PDF
-├── vector_store_cache/    # Cache degli embedding
-└── README.md             # Questo file
+├── 🎯 Core Application
+│   ├── app.py                     # Logica applicativa principale
+│   ├── streamlit_app.py           # Interfaccia web Streamlit
+│   ├── llm_providers.py           # Factory multi-provider AI
+│   └── system_prompt.py           # Gestione prompts centralizzata
+├── ⚙️ Configuration
+│   └── config/
+│       ├── __init__.py
+│       └── settings.py            # Configurazione centralizzata
+├── 🔧 Extensions & Utilities
+│   ├── extensions/
+│   │   └── multimodal.py         # Elaborazione OCR e immagini
+│   └── utils/
+│       └── memory_optimizer.py   # Ottimizzazione memoria
+├── 🧪 Testing & Quality
+│   ├── tests/
+│   │   ├── unit/                 # Test unitari
+│   │   ├── integration/          # Test integrazione
+│   │   ├── performance/          # Test performance
+│   │   └── conftest.py           # Configurazione test
+│   ├── pyproject.toml            # Configurazione progetto moderna
+│   └── requirements-dev.txt      # Dipendenze sviluppo
+├── 🏗️ Build Scripts
+│   ├── build_hybrid_store.py     # Builder vector store completo
+│   ├── build_vector_store.py     # Builder con cache multimodale
+│   ├── quick_vector_build.py     # Builder rapido
+│   └── build_cache.py            # Pre-build cache
+├── 📦 Deployment
+│   ├── requirements.txt          # Dipendenze produzione
+│   ├── .devcontainer/           # Setup container sviluppo
+│   └── .env.example             # Template configurazione
+└── 📚 Knowledge Base
+    ├── pdfs/                    # Documenti PDF tecnici
+    ├── cache/                   # Cache elaborazioni
+    └── vector_store_cache/      # Cache embedding
 ```
 
-## 🎯 Funzionalità
+## 🔧 Provider Supportati
 
-- **Recupero Intelligente**: Utilizza ParentDocumentRetriever per migliorare il contesto
-- **Multiple Strategie**: Supporta ensemble, HyDE, e multi-query retrieval
-- **Cache Intelligente**: Salva e riutilizza gli embedding per performance ottimali
-- **Validazione PDF**: Verifica automatica della qualità dei documenti
-- **Debug Avanzato**: Strumenti per analizzare il contenuto e il recupero
+### **Large Language Models**
 
-## 🔍 Modalità di Recupero
+| Provider | Modelli | Caratteristiche |
+|----------|---------|-----------------|
+| **Google** | `gemini-2.0-flash-exp`, `gemini-2.5-flash`, `gemini-2.5-pro` | Veloce, ottimo per RAG, supporto multimodale |
+| **OpenAI** | `gpt-4o`, `gpt-4o-mini`, `o1-preview`, `o1-mini` | Qualità premium, ragionamento avanzato |
+| **Anthropic** | `claude-3.5-haiku`, `claude-4-sonnet`, `claude-4-opus` | Testo lungo, analisi dettagliate |
+| **Ollama** | `llama3.2`, `mistral`, `codellama` | Locale, privacy, nessun costo API |
 
-1. **Standard**: ParentDocumentRetriever con cache
-2. **Ensemble**: Combina BM25 e FAISS per risultati migliori
-3. **HyDE**: Hypothetical Document Embedding per query più precise
-4. **Multi-Query**: Genera multiple query per migliorare il recupero
+### **Embedding Models**
 
-## 📊 Monitoraggio
+| Provider | Modelli | Use Case |
+|----------|---------|----------|
+| **HuggingFace** | `sentence-transformers/all-MiniLM-L6-v2` | Locale, veloce, gratuito |
+| **Google** | `models/embedding-001`, `text-embedding-004` | Ottimizzato per Gemini |
+| **OpenAI** | `text-embedding-3-large`, `text-embedding-3-small` | Alta qualità, multilingue |
 
-Il sistema include logging dettagliato per:
+## 🎛️ Configurazione Avanzata
 
-- Caricamento documenti
-- Creazione embedding
-- Processo di cache
-- Performance del retriever
+### **Ottimizzazione Performance**
+
+```env
+# Memory Management
+MEMORY_THRESHOLD_MB=2048           # Soglia memoria per batch processing
+MAX_BATCH_SIZE=50                  # Dimensione massima batch
+ENABLE_MEMORY_MONITORING=true     # Abilita monitoraggio memoria
+
+# Retrieval Optimization
+RETRIEVER_K=5                      # Numero documenti recuperati
+CHUNK_SIZE=1000                    # Dimensione chunk testo
+CHUNK_OVERLAP=200                  # Overlap tra chunk
+
+# API Optimization
+EMBEDDING_TIMEOUT=180              # Timeout embedding (secondi)
+EMBEDDING_RETRY_ATTEMPTS=3         # Tentativi retry
+EMBEDDING_RETRY_DELAY=5            # Delay tra retry
+```
+
+### **Configurazione Multimodale**
+
+```env
+# OCR Settings
+ENABLE_OCR=true                    # Abilita elaborazione OCR
+OCR_LANGUAGES=ita+eng              # Lingue OCR (Tesseract)
+OCR_MIN_CONFIDENCE=60              # Confidenza minima OCR
+
+# Image Processing
+ENABLE_IMAGE_PROCESSING=true       # Elaborazione immagini avanzata
+IMAGE_DPI=300                      # DPI per rendering PDF
+TABLE_DETECTION=true               # Rilevamento tabelle automatico
+```
+
+## 📊 Funzionalità di Monitoraggio
+
+### **Logging Strutturato**
+
+Il sistema include logging completo per:
+
+- 📈 **Performance Metrics**: Tempi di risposta, uso memoria, cache hit rate
+- 🔍 **Retrieval Analysis**: Documenti trovati, rilevanza, strategie utilizzate
+- 🖼️ **Multimodal Processing**: Risultati OCR, classificazione immagini
+- 🚨 **Error Tracking**: Errori API, timeout, fallback utilizzati
+
+### **Debug Mode**
+
+```bash
+# Abilita logging dettagliato
+export LOG_LEVEL=DEBUG
+streamlit run streamlit_app.py
+```
+
+Nell'interfaccia Streamlit:
+- **Analisi Retrieval**: Visualizza documenti recuperati e scoring
+- **Ispezione Cache**: Stato cache e statistiche hit/miss
+- **Monitor Memoria**: Utilizzo memoria real-time
+- **Performance Panel**: Tempi di elaborazione per componente
+
+## 🧪 Testing
+
+### **Esecuzione Test**
+
+```bash
+# Test completi con coverage
+python run_tests.py --coverage
+
+# Test specifici
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+pytest tests/performance/ -v
+
+# Test con report HTML
+pytest --cov=. --cov-report=html
+```
+
+### **Quality Checks**
+
+```bash
+# Linting e formatting
+black .
+flake8 .
+mypy .
+isort .
+
+# Pre-commit hooks (opzionale)
+pre-commit install
+pre-commit run --all-files
+```
+
+## 🛠️ Risoluzione Problemi
+
+### **Errori Comuni**
+
+#### **"ModuleNotFoundError: No module named 'langchain_huggingface'"**
+
+```bash
+pip install langchain-huggingface>=0.0.3 sentence-transformers>=2.2.0
+```
+
+#### **"Tesseract not found"**
+
+**Windows**:
+```bash
+# Download e installa Tesseract da: https://github.com/UB-Mannheim/tesseract/wiki
+# Il sistema rileva automaticamente il path
+```
+
+**Linux/Mac**:
+```bash
+sudo apt-get install tesseract-ocr tesseract-ocr-ita  # Ubuntu
+brew install tesseract tesseract-lang                  # macOS
+```
+
+#### **"Memory error durante vector store build"**
+
+```env
+# Riduci batch size nel .env
+MAX_BATCH_SIZE=10
+MEMORY_THRESHOLD_MB=1024
+```
+
+#### **"API Rate Limit"**
+
+```env
+# Aumenta delay tra richieste
+EMBEDDING_RETRY_DELAY=10
+EMBEDDING_TIMEOUT=300
+```
+
+### **Performance Tuning**
+
+#### **Per Documenti di Grandi Dimensioni**
+
+```bash
+# Use quick build per test iniziali
+python quick_vector_build.py
+
+# Poi upgrading a full build
+python build_hybrid_store.py --incremental
+```
+
+#### **Ottimizzazione Memoria**
+
+```env
+# Configurazione per sistemi con poca RAM
+MEMORY_THRESHOLD_MB=512
+MAX_BATCH_SIZE=5
+ENABLE_AGGRESSIVE_GC=true
+```
+
+## 🔗 Integrazione e API
+
+### **Uso come Libreria**
+
+```python
+from app import create_chatbot
+from config import AppConfig
+
+# Configurazione
+config = AppConfig()
+config.llm_provider = "google"
+config.llm_model_name = "gemini-2.0-flash-exp"
+
+# Creazione chatbot
+qa_chain = create_chatbot("standard", config)
+
+# Query
+response = qa_chain.invoke({"query": "Come funzionano i cuscinetti a sfera?"})
+print(response["result"])
+```
+
+### **API REST (Sviluppo Futuro)**
+
+```python
+# Pianificato per versioni future
+# POST /api/query
+# GET /api/health
+# GET /api/models
+```
 
 ## 🤝 Contributi
 
-Per segnalare problemi o suggerire miglioramenti, apri una issue su GitHub.
+1. **Fork** il repository
+2. **Crea** feature branch (`git checkout -b feature/AmazingFeature`)
+3. **Commit** le modifiche (`git commit -m 'Add AmazingFeature'`)
+4. **Push** al branch (`git push origin feature/AmazingFeature`)
+5. **Apri** Pull Request
+
+### **Standard di Sviluppo**
+
+- ✅ **Type Hints**: Tutte le funzioni devono avere type annotations
+- ✅ **Testing**: Coverage minimo 80% per nuove feature
+- ✅ **Documentation**: Docstring per classi e funzioni pubbliche
+- ✅ **Code Style**: Conformità a Black, flake8, mypy
+
+## 📝 Changelog
+
+### **v2.0** (Corrente)
+- ✨ Supporto multi-provider AI (Google, OpenAI, Anthropic, Ollama)
+- 🖼️ Elaborazione multimodale con OCR intelligente
+- 💾 Sistema ottimizzazione memoria avanzato
+- 🎨 Interfaccia Streamlit completamente rinnovata
+- 🧪 Framework testing completo
+- 📦 Setup deployment moderno
+
+### **v1.0** (Legacy)
+- 📄 Chatbot PDF base con Google Gemini
+- 🔍 Retrieval semplice con FAISS
+- 💬 Interfaccia console basica
+
+## 📄 Licenza
+
+Questo progetto è distribuito sotto licenza MIT. Vedi `LICENSE` per maggiori dettagli.
+
+## 🙏 Riconoscimenti
+
+- **LangChain** - Framework RAG
+- **Streamlit** - Interfaccia web
+- **FAISS** - Vector database
+- **Tesseract** - Engine OCR
+- **HuggingFace** - Modelli embedding
+- **Google AI** - Gemini models
+
+---
+
+**Sviluppato per l'eccellenza nell'ingegneria meccanica** 🔧⚙️

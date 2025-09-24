@@ -10,7 +10,7 @@
 
 ## 🔧 FASE 1: Ottimizzazioni Core (Priority: HIGH)
 
-### **TASK-004: Logging Strutturato**
+### **TASK-1: Logging Strutturato**
 
 **Stato**: 📋 PIANIFICATO
 **Priorità**: MEDIUM
@@ -53,54 +53,11 @@
 - [ ] Log aggregabili per analytics
 - [ ] Backward compatibility per development
 
-**Dipendenze**: TASK-001
-
 ---
 
 ### 💡 PROPOSTO
 
-### **TASK-005: Ottimizzazione Vector Store**
-
-**Stato**: 💡 PROPOSTO
-**Priorità**: MEDIUM
-**Tempo stimato**: 8-10 ore
-
-**Obiettivo**: Migliorare performance e caching del vector store
-
-**Dettagli implementazione**:
-
-1. **Creare `optimized_retriever.py`**:
-
-   ```python
-   class OptimizedFAISSRetriever:
-       def __init__(self, faiss_index_path, embedding_model):
-           self.index = faiss.read_index(faiss_index_path)
-           self._query_cache = {}
-
-       def similarity_search_with_cache(self, query, k=5):
-           query_hash = hashlib.md5(query.encode()).hexdigest()
-           if query_hash in self._query_cache:
-               return self._query_cache[query_hash]
-   ```
-
-2. **Features**:
-   - Query result caching
-   - Index compression
-   - Parallel search per multiple queries
-   - Adaptive k-value based on query complexity
-
-**Criteri di accettazione**:
-
-- [ ] 20%+ improvement in search speed
-- [ ] Memoria cache configurabile
-- [ ] A/B testing con retriever attuale
-- [ ] Metrics per cache effectiveness
-
-**Dipendenze**: TASK-001, TASK-004
-
----
-
-### **TASK-302: Sistema di Validazione Qualità**
+### **TASK-2: Sistema di Validazione Qualità**
 
 **Stato**: 💡 PROPOSTO
 **Priorità**: LOW
@@ -140,7 +97,7 @@
 
 ---
 
-### **TASK-303: Sistema di Feedback e Apprendimento**
+### **TASK-3: Sistema di Feedback e Apprendimento**
 
 **Stato**: 💡 PROPOSTO
 **Priorità**: LOW
@@ -188,59 +145,9 @@
 - [ ] Automated insights generation
 - [ ] Privacy-compliant data handling
 
-**Dipendenze**: TASK-001, TASK-004
-
 ---
 
-## 🚀 FASE 4: API e Integrazione (Priority: LOW)
-
-### **TASK-401: API REST Service**
-
-**Stato**: 💡 PROPOSTO
-**Priorità**: LOW
-**Tempo stimato**: 15-18 ore
-
-**Obiettivo**: Esporre funzionalità via REST API
-
-**Dettagli implementazione**:
-
-1. **Creare `api/server.py`**:
-
-   ```python
-   from fastapi import FastAPI, HTTPException
-   from pydantic import BaseModel
-
-   app = FastAPI(title="BearX API", version="1.0.0")
-
-   @app.post("/query")
-   async def process_query(request: QueryRequest):
-       # Process query and return structured response
-   ```
-
-2. **Endpoints**:
-   - `POST /query` - Process question
-   - `GET /health` - Health check
-   - `GET /metrics` - Performance metrics
-   - `POST /feedback` - Submit user feedback
-
-3. **Features**:
-   - Request validation
-   - Rate limiting
-   - Authentication (optional)
-   - OpenAPI documentation
-
-**Criteri di accettazione**:
-
-- [ ] API completamente funzionale
-- [ ] Documentazione OpenAPI
-- [ ] Test integration completi
-- [ ] Performance monitoring
-
-**Dipendenze**: TASK-001, TASK-004
-
----
-
-### **TASK-402: Sistema di Deployment**
+### **TASK-4: Sistema di Deployment**
 
 **Stato**: 💡 PROPOSTO
 **Priorità**: LOW
@@ -276,13 +183,7 @@
 - [ ] Health checks configurati
 - [ ] Scaling capability
 
-**Dipendenze**: TASK-201
-
----
-
-## 📊 FASE 5: Monitoring e Analytics (Priority: LOW)
-
-### **TASK-501: Dashboard Performance**
+### **TASK-5: Dashboard Performance**
 
 **Stato**: 💡 PROPOSTO
 **Priorità**: LOW
@@ -315,9 +216,7 @@
 
 ---
 
-## 🔧 Task di Supporto
-
-### **TASK-601: Documentazione Tecnica**
+### **TASK-6: Documentazione Tecnica**
 
 **Stato**: 📋 PIANIFICATO
 **Priorità**: MEDIUM
@@ -327,17 +226,14 @@
 
 **Deliverables**:
 
-1. **API Documentation** (Sphinx)
-2. **Architecture Decision Records** (ADRs)
-3. **Development Guide**
-4. **Deployment Guide**
-5. **Performance Tuning Guide**
+1. **Architecture Decision Records** (ADRs)
+2. **Development Guide**
+3. **Deployment Guide**
+4. **Performance Tuning Guide**
 
 **File da creare**:
 
 - `docs/` directory structure
-- `docs/conf.py` (Sphinx config)
-- `docs/api/` (API documentation)
 - `docs/architecture/` (ADRs)
 - `CONTRIBUTING.md`
 
@@ -347,105 +243,5 @@
 - [ ] Architecture diagrams aggiornati
 - [ ] Guide per nuovi contributor
 - [ ] Performance benchmarks documentati
-
----
-
-### **TASK-702: Test Integration e Performance**
-
-**Stato**: ⚠️ BLOCCATO
-**Priorità**: MEDIUM
-**Tempo stimato**: 15-20 ore
-
-**Obiettivo**: Test suite completa per integration e performance
-
-**Dettagli** (da implementare dopo completion testing framework):
-
-1. **Integration tests**:
-   - End-to-end query processing
-   - Cache invalidation scenarios
-   - Multi-retriever comparison
-   - Error recovery testing
-
-2. **Performance tests**:
-   - Load testing con multiple users
-   - Memory usage profiling
-   - Latency benchmarking
-   - Scalability testing
-
-**File da creare**:
-
-- `tests/integration/`
-- `tests/performance/`
-- `tests/fixtures/sample_data/`
-
-**Blocking factors**:
-
-- Need base testing framework (COMPLETED)
-- Need configuration refactoring (TASK-001)
-
----
-
-## 🎯 Metriche di Successo
-
-### Performance Targets
-
-- [ ] **Response Time**: < 2s per query standard
-- [ ] **Memory Usage**: < 2GB per istanza
-- [ ] **Cache Hit Rate**: > 70% per query simili
-- [ ] **Availability**: > 99.5% uptime
-
-### Quality Targets
-
-- [ ] **Test Coverage**: > 85%
-- [ ] **Code Quality**: Flake8 score < 10 warnings
-- [ ] **Type Coverage**: > 80% con mypy
-- [ ] **Security**: Zero critical vulnerabilities
-
-### User Experience Targets
-
-- [ ] **Accuracy**: > 85% risposte pertinenti
-- [ ] **User Satisfaction**: > 4.0/5.0 rating medio
-- [ ] **Error Rate**: < 5% query fallite
-- [ ] **Documentation**: 100% API documented
-
----
-
-## 📝 Note Implementative
-
-### Environment Setup per Development
-
-```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
-
-# Setup pre-commit hooks
-pre-commit install
-
-# Run tests
-python run_tests.py --quick
-
-# Type checking
-mypy app.py --ignore-missing-imports
-
-# Code formatting
-black .
-isort .
-```
-
-### Comandi Utili
-
-```bash
-# Quick development check
-python run_tests.py --quick
-
-# Full validation before PR
-python run_tests.py --full
-
-# Performance profiling
-python -m cProfile -o profile.stats app.py
-
-# Memory profiling
-python -m memory_profiler app.py
-```
 
 ---
