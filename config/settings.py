@@ -18,14 +18,14 @@ class AppConfig:
 
     # === CONFIGURAZIONE MODELLI ===
     llm_provider: str = "google"  # "google", "openai", "anthropic", "ollama"
-    llm_model: str = "gemini-2.5-flash-lite"
-    embedding_provider: str = "google"  # "google", "openai", "huggingface"
-    embedding_model: str = "models/embedding-001"
+    llm_model: str = "gemini-2.0-flash"
+    embedding_provider: str = "huggingface"  # "google", "openai", "huggingface"
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # === CONFIGURAZIONE RETRIEVAL ===
     retriever_k: int = 5
     retriever_fetch_k: int = 20
-    search_type: str = "similarity"  # "similarity" o "mmr"
+    search_type: str = "mmr"  # "similarity" o "mmr"
 
     # === CONFIGURAZIONE CHUNKING ===
     chunk_size: int = 1000
@@ -60,6 +60,10 @@ class AppConfig:
     ocr_confidence_threshold: int = 60
     min_image_size: tuple = (100, 50)
     cache_multimodal_results: bool = True
+
+    # === CONFIGURAZIONE FUNZIONALITÀ AVANZATE ===
+    use_hyde: bool = True
+    retriever_lambda_mult: float = 0.6
 
     # === CONFIGURAZIONE SICUREZZA ===
     google_api_key: Optional[str] = field(default=None, repr=False)
@@ -120,6 +124,10 @@ class AppConfig:
             ocr_confidence_threshold=int(os.getenv("OCR_CONFIDENCE_THRESHOLD", cls.ocr_confidence_threshold)),
             min_image_size=tuple(map(int, os.getenv("MIN_IMAGE_SIZE", "100,50").split(","))),
             cache_multimodal_results=os.getenv("CACHE_MULTIMODAL_RESULTS", "true").lower() in ("true", "1", "yes"),
+
+            # Funzionalità avanzate
+            use_hyde=os.getenv("USE_HYDE", "true").lower() in ("true", "1", "yes"),
+            retriever_lambda_mult=float(os.getenv("RETRIEVER_LAMBDA_MULT", cls.retriever_lambda_mult)),
 
             # Sicurezza
             google_api_key=os.getenv("GOOGLE_API_KEY"),

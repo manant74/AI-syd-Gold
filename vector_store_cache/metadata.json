@@ -1,7 +1,6 @@
 {
-  "total_documents": 250,
-  "text_documents": 50,
-  "multimodal_documents": 200,
+  "total_documents": 4159,
   "embedding_provider": "huggingface",
-  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2"
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "source": "build_hybrid_store.py"
 }

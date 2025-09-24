@@ -17,3 +17,4 @@ opencv-python
 pillow
 pdf2image
 pymupdf
+streamlit-modal

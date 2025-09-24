@@ -275,7 +275,7 @@ class LLMFactory:
                     "gemini-2.5-flash",
                     "gemini-2.5-flash-lite",
                     "gemini-2.5-pro",
-                    "gemini-2.0-flash-lite"  # Supporto legacy
+                    "gemini-2.0"  # Supporto legacy
                 ],
                 "embeddings": [
                     "models/embedding-001",
@@ -287,7 +287,6 @@ class LLMFactory:
                     "gpt-4o",
                     "gpt-4o-mini",
                     "gpt-4-turbo",
-                    "gpt-4-turbo-preview",
                     "gpt-4",
                     "gpt-5",
                     "o1-preview",

@@ -21,16 +21,16 @@ class SystemPrompts:
 Il tuo compito è supportare l’utente nella selezione, applicazione e manutenzione di cuscinetti, usando esclusivamente la conoscenza fornita (cataloghi, manuali tecnici, rapporti di prova, ecc.).
 
 **REGOLE FONDAMENTALI:**
-1. **BASATI SOLO SUL CONTESTO**: Usa esclusivamente le informazioni fornite nei documenti tecnici
+1. **BASATI SOLO SUL CONTESTO**: Usa esclusivamente le informazioni fornite
 2. **PRECISIONE TECNICA**: Riporta esattamente dati, formule, specifiche e unità di misura
 3. **CONTESTO INDUSTRIALE**: Considera sempre l'applicazione pratica e le condizioni operative
-4. **STANDARD E NORME**: Cita sempre gli standard tecnici quando menzionati nei documenti
+4. **STANDARD E NORME**: Cita sempre gli standard tecnici quando menzionati nelle fonti
 
 **ISTRUZIONI PER LA FORMATTAZIONE:**
 - **Tabelle**: Per specifiche tecniche, dati dimensionali, carichi, velocità, temperature
 - **Elenchi puntati**: Per caratteristiche, procedure, vantaggi/svantaggi, requisiti
 - **Paragrafi**: Per spiegazioni concettuali, principi di funzionamento, analisi
-- **Formule**: Riporta esattamente le formule matematiche presenti nei documenti
+- **Formule**: Riporta esattamente le formule matematiche presenti nella knowledge base
 - **Unità di misura**: Mantieni sempre le unità originali (N, kN, rpm, °C, mm, etc.)
 
 **ASPETTI TECNICI SPECIFICI:**
@@ -46,7 +46,7 @@ Spiega i termini tecnici alla prima occorrenza.
 Rispondi sempre nella lingua dell'utente, a meno che l'utente nonscelga una lingua specifica
 
 **CALCOLI**
-Se richiesti, esegui calcoli solo con formule presenti nei documenti caricati.
+Se richiesti, esegui calcoli solo con formule presenti nella knowledge base.
 Mostra sempre i passaggi dei calcoli.
 Includi la nota standard: Nota: questo calcolo fornisce una valutazione generale basata sulle specifiche di catalogo. Per indicazioni applicative specifiche, contatta un ingegnere tecnico del produttore.
 
@@ -65,7 +65,7 @@ Alla fine della risposta, aggiungi un suggerimento su ulteriori argomenti rileva
 
     # Prompt per HyDE (Hypothetical Document Embedding)
     HYDE_GENERATION = """Sei un assistente utile. Il tuo compito è generare un breve paragrafo che risponda alla domanda dell'utente.
-Questo paragrafo verrà utilizzato per la ricerca semantica per trovare i documenti più pertinenti.
+Questo paragrafo verrà utilizzato per la ricerca semantica per trovare informazioni dalle fonti più pertinenti.
 Domanda: {question}
 Paragrafo di risposta ipotetico:"""
 
@@ -82,9 +82,9 @@ Fornisci:
 4. Suggerimenti per miglioramenti"""
 
     # Prompt per validazione qualità documenti
-    DOCUMENT_QUALITY_VALIDATION = """Valuta la qualità di questo documento tecnico sui cuscinetti:
+    DOCUMENT_QUALITY_VALIDATION = """Valuta la qualità di questa fonte tecnica sui cuscinetti:
 
-Documento:
+Fonte:
 {document}
 
 Criteri di valutazione:
@@ -158,7 +158,7 @@ class PromptBuilder:
         Costruisce il prompt RAG principale con validazione dei parametri.
 
         Args:
-            context: Il contesto recuperato dai documenti
+            context: Il contesto recuperato dalle fonti
             question: La domanda dell'utente
 
         Returns:

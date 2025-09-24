@@ -27,7 +27,7 @@ def load_multimodal_cache():
     documents = []
 
     if not cache_dir.exists():
-        print("❌ Cache multimodale non trovata!")
+        print("Cache multimodale non trovata!")
         return []
 
     pickle_files = list(cache_dir.glob("*.pickle"))
