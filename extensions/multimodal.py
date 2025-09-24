@@ -7,13 +7,14 @@ import os
 import io
 import logging
 import hashlib
+import cv2
+import fitz  # PyMuPDF
+import pytesseract
+
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
-import fitz  # PyMuPDF
-import pytesseract
 
 logger = logging.getLogger(__name__)
 
