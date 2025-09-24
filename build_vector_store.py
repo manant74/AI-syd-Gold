@@ -19,7 +19,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.storage import InMemoryStore
 from langchain.retrievers import ParentDocumentRetriever
-from langchain.schema import Document
 
 def load_multimodal_cache():
     """Carica tutti i documenti dalla cache multimodale."""
@@ -27,7 +26,7 @@ def load_multimodal_cache():
     documents = []
 
     if not cache_dir.exists():
-        print("❌ Cache multimodale non trovata!")
+        print("Cache multimodale non trovata!")
         return []
 
     pickle_files = list(cache_dir.glob("*.pickle"))

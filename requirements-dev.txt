@@ -1,39 +1,15 @@
-# Development dependencies for AI-syd-Gold
+# Include production dependencies
+-r requirements.txt
 
-# Testing framework
-pytest==7.4.3
-pytest-cov==4.1.0
-pytest-mock==3.12.0
-pytest-timeout==2.2.0
-pytest-xdist==3.5.0
+# Development and testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+pre-commit>=3.0.0
 
-# Code quality and linting
-black==23.12.1
-flake8==6.1.0
-isort==5.13.2
-mypy==1.8.0
-
-# Type checking support
-types-requests==2.31.0.20240125
-
-# Documentation
-sphinx==7.2.6
-sphinx-rtd-theme==2.0.0
-
-# Development utilities
-ipython==8.18.1
-jupyter==1.0.0
-pre-commit==3.6.0
-
-# Performance profiling
-line-profiler==4.1.1
-memory-profiler==0.61.0
-
-# Additional testing utilities
-factory-boy==3.3.0
-freezegun==1.4.0
-responses==0.24.1
-
-# Security scanning
-bandit==1.7.5
-safety==2.3.4
+# Documentation (optional)
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.2.0

@@ -13,7 +13,6 @@ from pathlib import Path
 os.environ["EMBEDDING_PROVIDER"] = "huggingface"
 os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
 from langchain_huggingface import HuggingFaceEmbeddings

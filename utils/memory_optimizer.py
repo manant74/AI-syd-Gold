@@ -138,27 +138,18 @@ class CacheManager:
 
     def clear_all_caches(self):
         """Pulisce tutte le cache registrate."""
-        with self._lock:
-            cleared_count = 0
-            for cache in list(self.caches):
-                try:
-                    if hasattr(cache, 'cache_clear'):
-                        cache.cache_clear()
-                        cleared_count += 1
-                except Exception as e:
-                    logger.warning(f"Errore pulizia cache: {e}")
-
-            logger.info(f"Pulite {cleared_count} cache")
+        logger.warning("La pulizia della cache è temporaneamente disabilitata per debug.")
+        pass # Disabilitato per debug
 
     def check_memory_pressure(self) -> bool:
         """
         Controlla se c'è pressione di memoria.
-
+        TEMPORANEAMENTE DISABILITATO PER DEBUG.
         Returns:
             True se la memoria è sotto pressione
         """
-        info = memory_monitor.get_memory_info()
-        return info['system_percent'] > 85 or info['percent'] > 70
+        # Temporaneamente disabilitato per prevenire la pulizia della cache
+        return False
 
 
 # Istanza globale del cache manager

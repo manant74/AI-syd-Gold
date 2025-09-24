@@ -4,6 +4,7 @@ Handles extraction of text from images, tables, and technical diagrams in PDF do
 """
 
 import os
+import io
 import logging
 import hashlib
 from typing import List, Dict, Tuple, Optional, Any
@@ -13,9 +14,6 @@ from pathlib import Path
 import cv2
 import fitz  # PyMuPDF
 import pytesseract
-
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,6 @@ if platform.system() == 'Windows':
     else:
         print("Tesseract non trovato nei percorsi standard")
 from PIL import Image, ImageEnhance, ImageFilter
-import pdf2image
 import numpy as np
 
 from langchain.schema import Document
@@ -93,55 +90,114 @@ class MultimodalDocumentProcessor:
 
     def process_pdf_document(self, pdf_path: str) -> Tuple[List[Document], ProcessingStats]:
         """
-        Processa un PDF estraendo testo da immagini e diagrammi.
+        Processa un PDF utilizzando un approccio ibrido: prima tenta l'estrazione
+        di testo nativo, e solo se fallisce esegue l'OCR sulla pagina.
 
         Args:
             pdf_path: Percorso al file PDF
 
         Returns:
-            Tuple di (documenti_multimodali, statistiche)
+            Tuple di (documenti, statistiche)
         """
-        logger.info(f"Inizio processamento multimodale: {pdf_path}")
-
+        logger.info(f"Inizio processamento ibrido: {pdf_path}")
         stats = ProcessingStats()
         extracted_documents = []
 
         try:
-            # Apri il PDF con PyMuPDF per analisi avanzata
             pdf_document = fitz.open(pdf_path)
             stats.total_pages = pdf_document.page_count
 
             for page_num in range(pdf_document.page_count):
                 page = pdf_document[page_num]
+                
+                # 1. Tentativo di estrazione testo nativo
+                native_text = page.get_text().strip()
 
-                # Estrai immagini dalla pagina
-                images = self._extract_images_from_page(page, page_num)
-                stats.images_found += len(images)
-
-                # Processa ogni immagine
-                for img_data in images:
+                # Euristica per decidere se il testo è sufficiente
+                if len(native_text) > 100: # Considera la pagina come testuale
+                    logger.info(f"Pagina {page_num}: Estratto testo nativo ({len(native_text)} caratteri).")
+                    doc = Document(
+                        page_content=native_text,
+                        metadata={
+                            'source': pdf_path,
+                            'page': page_num,
+                            'content_type': 'text',
+                            'extraction_method': 'native'
+                        }
+                    )
+                    extracted_documents.append(doc)
+                    stats.text_extracted_chars += len(native_text)
+                
+                # 2. Fallback a OCR se non c'è testo nativo
+                else:
+                    logger.info(f"Pagina {page_num}: Testo nativo insufficiente. Esecuzione OCR...")
                     try:
-                        result = self._process_image(img_data, pdf_path, page_num)
-                        if result and result.text.strip():
-                            # Crea documento LangChain
+                        result = self._ocr_scanned_page(page, pdf_path, page_num)
+                        if result and result.text:
                             doc = self._create_document_from_image(
-                                result, pdf_path, page_num, img_data
+                                result, pdf_path, page_num, {} # img_data non è più rilevante qui
                             )
                             extracted_documents.append(doc)
                             stats.images_processed += 1
                             stats.text_extracted_chars += len(result.text)
+                        else:
+                            logger.warning(f"Pagina {page_num}: OCR non ha prodotto risultati validi.")
+                            stats.processing_errors += 1
                     except Exception as e:
-                        logger.warning(f"Errore processamento immagine pagina {page_num}: {e}")
+                        logger.error(f"Errore OCR pagina {page_num}: {e}")
                         stats.processing_errors += 1
 
             pdf_document.close()
 
         except Exception as e:
-            logger.error(f"Errore processamento PDF {pdf_path}: {e}")
+            logger.error(f"Errore critico processamento PDF {pdf_path}: {e}")
             stats.processing_errors += 1
 
-        logger.info(f"Processamento completato: {stats.images_processed}/{stats.images_found} immagini elaborate")
+        logger.info(f"Processamento completato: {len(extracted_documents)} documenti creati.")
         return extracted_documents, stats
+
+    def _ocr_scanned_page(self, page: fitz.Page, pdf_path: str, page_num: int) -> Optional[ImageExtractionResult]:
+        """Esegue OCR su un'intera pagina, trattandola come un'immagine."""
+        
+        # Controllo cache per l'intera pagina
+        cache_key = f"{Path(pdf_path).stem}_page{page_num}_full_ocr"
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result:
+            logger.info(f"Pagina {page_num}: Trovato risultato OCR in cache.")
+            return cached_result
+
+        # Renderizza pagina ad alta risoluzione
+        pix = page.get_pixmap(dpi=300)
+        img_data = pix.tobytes("png")
+        image = Image.open(io.BytesIO(img_data))
+
+        # Usa il preprocessing esistente
+        processed_image = self._preprocess_image(image)
+        
+        # Esegui OCR
+        ocr_result = pytesseract.image_to_data(
+            processed_image,
+            config=self.ocr_config,
+            output_type=pytesseract.Output.DICT
+        )
+
+        extracted_text, confidence = self._analyze_ocr_results(ocr_result)
+        logger.info(f"OCR pagina {page_num} - Testo: '{extracted_text[:100]}...' Confidenza: {confidence:.1f}%")
+
+        if confidence >= self.min_confidence and len(extracted_text) >= self.min_text_length:
+            result = ImageExtractionResult(
+                text=extracted_text,
+                confidence=confidence,
+                image_type='full_page_scan', # Nuovo tipo
+                metadata={
+                    'page_num': page_num,
+                    'source_pdf': pdf_path
+                }
+            )
+            self._cache_result(cache_key, result)
+            return result
+        
+        return None
 
     def _extract_images_from_page(self, page, page_num: int) -> List[Dict]:
         """Estrae tutte le immagini da una pagina PDF."""
@@ -399,8 +455,8 @@ class MultimodalDocumentProcessor:
             'image_type': result.image_type,
             'confidence': result.confidence,
             'extraction_method': 'OCR',
-            'image_dimensions': f"{img_data['width']}x{img_data['height']}",
-            'bbox': str(img_data['bbox']),
+            'image_dimensions': f"{img_data.get('width', 'N/A')}x{img_data.get('height', 'N/A')}",
+            'bbox': str(img_data.get('bbox', 'N/A')),
             'chunk_type': f"image_{result.image_type}"
         }
 
@@ -468,5 +524,3 @@ class MultimodalDocumentProcessor:
         except Exception as e:
             logger.error(f"Errore pulizia cache: {e}")
 
-# Fix import mancante
-import io

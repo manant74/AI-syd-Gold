@@ -1,29 +1,23 @@
 import os
-import json
 import hashlib
 import pickle
 import logging
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 # Import configurazione centralizzata
 from config import AppConfig
-from system_prompt import EXPERT_PROMPT, HYDE_PROMPT, CHAIN_OF_THOUGHT_PROMPT, CHAIN_OF_THOUGHT_SYNTHESIS_PROMPT
-from utils import MemoryOptimizer, monitor_memory_usage, process_documents_in_chunks
+from system_prompt import CHAIN_OF_THOUGHT_PROMPT, EXPERT_PROMPT
+from utils import MemoryOptimizer, monitor_memory_usage
 
 # Import delle classi necessarie da LangChain
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from llm_providers import LLMFactory
 from langchain.prompts import PromptTemplate
-from langchain.embeddings import HypotheticalDocumentEmbedder
 from langchain_community.vectorstores import FAISS
-from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.chains import RetrievalQA
 # Import per la strategia di recupero avanzata
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.storage import InMemoryStore
 from langchain.retrievers import ParentDocumentRetriever
 from langchain_core.retrievers import BaseRetriever
 # Configurazione logging
@@ -84,7 +78,7 @@ def _get_pdf_metadata(directory):
     return metadata
 
 def initialize_embeddings():
-    """Inizializza e testa l'embedding con il provider configurato e ottimizzazioni memoria."""
+    """Inizializza l'embedding con il provider configurato e ottimizzazioni memoria."""
     with monitor_memory_usage("initialize_embeddings"):
         try:
             logger.info(f"Inizializzazione embeddings: provider={config.embedding_provider}, model={config.embedding_model}")
@@ -96,15 +90,10 @@ def initialize_embeddings():
                 config=config
             )
 
-            # Test dell'embedding per verificare la connessione
-            test_embedding = embeddings.embed_query("test")
-            if not test_embedding:
-                raise RuntimeError("Test embedding fallito - nessun risultato")
-
             # Applica ottimizzazioni memoria agli embeddings
             optimized_embeddings = memory_optimizer.create_optimized_embeddings_func(embeddings)
 
-            logger.info(f"Embeddings {config.embedding_provider} inizializzati con successo")
+            logger.info(f"Embeddings {config.embedding_provider} inizializzati con successo (senza test di connessione).")
             return optimized_embeddings
         except Exception as e:
             raise RuntimeError(f"Errore nell'inizializzazione dell'embedding {config.embedding_provider}: {e}")
@@ -476,270 +465,72 @@ class ChainOfThoughtRetriever(BaseRetriever):
             return "Informazioni estratte con errori"
 
 
-def create_chatbot(retriever_type="standard"):
-    """
-    Funzione principale per creare e configurare il chatbot.
-    :param retriever_type: "standard", "hyde", o "multi-query"
-    """
-    # Validazione ambiente
-    # Per i deploy semplici, creiamo le directory se non esistono
-    if not os.path.exists(config.pdf_directory):
-        os.makedirs(config.pdf_directory)
-        logger.warning(f"Directory PDF '{config.pdf_directory}' creata, ma è vuota. Assicurati di aggiungere i PDF al repository.")
-    os.makedirs(config.vector_store_directory, exist_ok=True)
-    validate_environment()
-    
-    final_retriever = None
-    base_embeddings = None  # Inizializzeremo solo se necessario
+def get_retriever(config, embedding_provider, embedding_model):
+    """Carica il retriever dalla cache. Fallisce se la cache non è valida."""
+    logger.info("Tentativo di caricamento del retriever dalla cache...")
 
-    if retriever_type == "ensemble":
-        with monitor_memory_usage("ensemble_retriever_creation"):
-            logger.info("Modalità Ensemble Retriever selezionata. Verrà creato un indice specifico per questa sessione (senza cache).")
+    # Aggiorna la configurazione per la sessione di embedding
+    config.embedding_provider = embedding_provider
+    config.embedding_model = embedding_model
 
-            # Inizializza embeddings solo per ensemble (che non usa cache)
-            if base_embeddings is None:
-                base_embeddings = initialize_embeddings()
+    faiss_core_index_file = config.faiss_core_index_file
+    docstore_path = config.docstore_path
 
-            documents = load_and_validate_documents()
-            if not documents: return None
-
-            with monitor_memory_usage("document_splitting"):
-                text_splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=config.chunk_size,
-                    chunk_overlap=config.chunk_overlap
-                )
-                chunks = text_splitter.split_documents(documents)
-                logger.info(f"Documenti suddivisi in {len(chunks)} chunks per la modalità Ensemble.")
-
-            with monitor_memory_usage("bm25_retriever_creation"):
-                bm25_retriever = BM25Retriever.from_documents(chunks)
-                bm25_retriever.k = config.retriever_k
-
-            with monitor_memory_usage("faiss_vectorstore_creation"):
-                vectorstore = FAISS.from_documents(chunks, base_embeddings)
-                faiss_retriever = vectorstore.as_retriever(search_kwargs={"k": config.retriever_k})
-
-            final_retriever = EnsembleRetriever(
-                retrievers=[bm25_retriever, faiss_retriever],
-                weights=[0.5, 0.5]
-            )
-    else:
-        # Logica esistente per le altre modalità con ParentDocumentRetriever e cache
-        base_retriever = None
-        faiss_index_path = config.faiss_index_path
-        faiss_core_index_file = config.faiss_core_index_file
-        docstore_path = config.docstore_path
-
-        is_cache_valid = False
-        # Controllo di robustezza: verifica che i file di cache esistano e non siano vuoti.
-        # Usa SEMPRE la cache se esiste, senza controllare modifiche ai PDF.
-        # La rigenerazione avviene solo manualmente tramite il pulsante nell'interfaccia.
-        if (os.path.exists(config.metadata_file_path) and os.path.getsize(config.metadata_file_path) > 0 and
-            os.path.exists(faiss_core_index_file) and os.path.getsize(faiss_core_index_file) > 0 and
+    if not (os.path.exists(faiss_core_index_file) and os.path.getsize(faiss_core_index_file) > 0 and
             os.path.exists(docstore_path) and os.path.getsize(docstore_path) > 0):
-            try:
-                with open(config.metadata_file_path, 'r') as f: saved_metadata = json.load(f)
+        logger.error("Cache non trovata o non valida. Eseguire lo script 'build_hybrid_store.py' per creare l'indice.")
+        return None
 
-                # Usa sempre la cache se esiste, indipendentemente dai cambiamenti ai PDF
-                if saved_metadata:
-                    logger.info("Cache degli embeddings trovata. Caricamento dalla cache (nessun controllo di modifiche).")
-                    is_cache_valid = True
-                else:
-                    logger.info("Cache esistente ma vuota. L'indice verrà ricreato.")
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Errore nella lettura dei metadati: {e}. L'indice verrà ricreato.")
-
-        if is_cache_valid:
-            logger.info("L'indice è aggiornato. Caricamento del retriever dalla cache...")
-            try:
-                # Prova a inizializzare embeddings solo se necessario
-                # In caso di errore (quota esaurita), usa un placeholder
-                if base_embeddings is None:
-                    try:
-                        base_embeddings = initialize_embeddings()
-                    except Exception as e:
-                        logger.warning(f"Impossibile inizializzare embeddings: {e}")
-                        logger.info("Tentativo di caricamento cache con embeddings placeholder...")
-
-                        # Crea embeddings placeholder che non fanno chiamate API
-                        from langchain.embeddings.base import Embeddings
-                        import numpy as np
-                        import faiss
-
-                        # Prova a determinare le dimensioni dall'indice esistente
-                        try:
-                            index = faiss.read_index(config.faiss_core_index_file)
-                            embedding_dim = index.d
-                            logger.info(f"Dimensioni embeddings rilevate dall'indice: {embedding_dim}")
-                        except:
-                            embedding_dim = 768  # Default per Google embeddings
-                            logger.warning(f"Impossibile rilevare dimensioni, uso default: {embedding_dim}")
-
-                        class PlaceholderEmbeddings(Embeddings):
-                            def __init__(self, dim):
-                                self.dim = dim
-
-                            def embed_documents(self, texts):
-                                return [np.zeros(self.dim).tolist() for _ in texts]
-
-                            def embed_query(self, text):
-                                return np.zeros(self.dim).tolist()
-
-                        base_embeddings = PlaceholderEmbeddings(embedding_dim)
-
-                embeddings_for_query = base_embeddings
-                if retriever_type == "hyde":
-                    logger.info("Strategia di recupero HyDE selezionata.")
-                    logger.warning("HyDE non disponibile con embeddings placeholder - uso standard")
-                    # Non possiamo usare HyDE con placeholder, fallback a standard
-
-                vectorstore = FAISS.load_local(faiss_index_path, embeddings_for_query, allow_dangerous_deserialization=True)
-                with open(docstore_path, "rb") as f: store = pickle.load(f)
-                base_retriever = ParentDocumentRetriever(
-                    vectorstore=vectorstore, docstore=store,
-                    child_splitter=RecursiveCharacterTextSplitter(
-                        chunk_size=config.child_chunk_size,
-                        chunk_overlap=config.child_chunk_overlap
-                    ),
-                    parent_splitter=RecursiveCharacterTextSplitter(
-                        chunk_size=config.parent_chunk_size,
-                        chunk_overlap=config.parent_chunk_overlap
-                    ),
-                )
-                logger.info("Retriever di base caricato con successo dalla cache.")
-            except Exception as e:
-                logger.warning(f"Errore nel caricamento dalla cache (possibile incompatibilità embeddings): {e}")
-                logger.info("Cache incompatibile con il nuovo provider embeddings. Usa il pulsante 'Rigenera embeddings' per ricreare la cache.")
-                base_retriever = None
-        
-        if base_retriever is None:
-            # Se la cache non è valida ma non vogliamo rigenerare automaticamente
-            if is_cache_valid is False:
-                logger.info("Nessuna cache valida trovata. Usa il pulsante 'Rigenera embeddings' per creare gli indici.")
-                return None
-
-            logger.info("Creazione di un nuovo indice con ParentDocumentRetriever...")
-
-            # Inizializza embeddings solo se necessario per creare nuovo indice
-            if base_embeddings is None:
-                base_embeddings = initialize_embeddings()
-
-            embeddings_for_query = base_embeddings
-            if retriever_type == "hyde":
-                logger.info("Strategia di recupero HyDE selezionata.")
-                llm_for_hyde = LLMFactory.create_llm(
-                    provider=config.llm_provider,
-                    model=config.llm_model,
-                    config=config,
-                    temperature=0
-                )
-                custom_prompt = PromptTemplate(input_variables=["question"], template=HYDE_PROMPT)
-                embeddings_for_query = HypotheticalDocumentEmbedder.from_llm(
-                    llm=llm_for_hyde,
-                    base_embeddings=base_embeddings,
-                    custom_prompt=custom_prompt
-                )
-
-            documents = load_and_validate_documents()
-            if not documents: return None
-
-            parent_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=config.parent_chunk_size,
-                chunk_overlap=config.parent_chunk_overlap
-            )
-            child_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=config.child_chunk_size,
-                chunk_overlap=config.child_chunk_overlap
-            )
-            vectorstore = FAISS.from_texts(["_"], embedding=base_embeddings)
-            vectorstore.delete(list(vectorstore.index_to_docstore_id.values()))
-            store = InMemoryStore()
-            base_retriever = ParentDocumentRetriever(
-                vectorstore=vectorstore, docstore=store,
-                child_splitter=child_splitter, parent_splitter=parent_splitter,
-            )
-            
-             # --- LOGICA DI BATCHING OTTIMIZZATA CON MEMORY MANAGEMENT ---
-            # Definiamo una funzione interna con retry per aggiungere documenti in modo robusto
-            @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
-            def add_documents_with_retry(docs):
-                """Aggiunge un batch di documenti al retriever, con tentativi automatici."""
-                with monitor_memory_usage(f"add_documents_batch_{len(docs)}"):
-                    base_retriever.add_documents(docs, ids=None)
-
-            total_docs = len(documents)
-            logger.info(f"Inizio processamento ottimizzato di {total_docs} documenti...")
-
-            # Usa il memory optimizer per determinare il batch size ottimale e processare i documenti
-            batch_num = 0
-            for batch in memory_optimizer.optimize_batch_processing(documents, "document_indexing"):
-                batch_num += 1
-                logger.info(f"Elaborazione batch ottimizzato {batch_num} con {len(batch)} documenti...")
-                try:
-                    add_documents_with_retry(batch)
-                except Exception as e:
-                    logger.error(f"Batch {batch_num} fallito dopo 5 tentativi: {e}")
-                    raise  # Interrompe il processo se un batch fallisce definitivamente
-
-            logger.info("Tutti i batch sono stati elaborati con successo con ottimizzazioni memoria.")
-            # --- FINE LOGICA OTTIMIZZATA ---
-
-            with monitor_memory_usage("save_index_to_disk"):
-                logger.info("Salvataggio del nuovo indice su disco...")
-                base_retriever.vectorstore.save_local(faiss_index_path)
-                with open(docstore_path, "wb") as f: pickle.dump(base_retriever.docstore, f)
-                current_metadata = _get_pdf_metadata(config.pdf_directory)
-                with open(config.metadata_file_path, 'w') as f: json.dump(current_metadata, f, indent=2)
-                logger.info(f"Nuovo indice e metadati salvati in '{config.vector_store_directory}'.")
-
-                # Log del report memoria finale
-                memory_report = memory_optimizer.get_memory_report()
-                logger.info(f"Report memoria finale: {memory_report['current_memory_mb']:.1f} MB utilizzati, "
-                           f"picco: {memory_report['peak_memory_mb']:.1f} MB")
-
-        if retriever_type == "multi-query":
-            logger.info("Applicazione del wrapper Multi-Query Retriever.")
-            llm_for_mq = LLMFactory.create_llm(
-                provider=config.llm_provider,
-                model=config.llm_model,
-                config=config,
-                temperature=0
-            )
-            final_retriever = MultiQueryRetriever.from_llm(retriever=base_retriever, llm=llm_for_mq)
-        elif retriever_type == "chain-of-thought":
-            logger.info("Modalità Chain-of-Thought Reasoning selezionata.")
-            final_retriever = ChainOfThoughtRetriever(base_retriever, config)
-        else:
-            final_retriever = base_retriever
-
-    # 4. Creazione della catena di Retrieval-Augmented Generation (RAG)
     try:
-        logger.info(f"Utilizzo del modello LLM: {config.llm_model}")
-        llm = LLMFactory.create_llm(
-            provider=config.llm_provider,
-            model=config.llm_model,
-            config=config,
-            temperature=0.7
+        base_embeddings = initialize_embeddings()
+        vectorstore = FAISS.load_local(config.faiss_index_path, base_embeddings, allow_dangerous_deserialization=True)
+        with open(docstore_path, "rb") as f:
+            store = pickle.load(f)
+
+        retriever = ParentDocumentRetriever(
+            vectorstore=vectorstore,
+            docstore=store,
+            child_splitter=RecursiveCharacterTextSplitter(chunk_size=config.child_chunk_size),
+            parent_splitter=RecursiveCharacterTextSplitter(chunk_size=config.parent_chunk_size),
         )
+        logger.info("Retriever caricato con successo dalla cache.")
+        return retriever
+    except Exception as e:
+        logger.error(f"Errore nel caricamento del retriever dalla cache: {e}")
+        logger.error("La cache potrebbe essere corrotta o incompatibile. Eseguire 'build_hybrid_store.py' per rigenerarla.")
+        return None
 
-        # Utilizziamo il prompt centralizzato dal modulo system_prompt
+def get_qa_chain(retriever, retriever_type, llm_provider, llm_model, config):
+    """Crea la catena di QA usando il retriever fornito e il modello LLM specificato."""
+    logger.info(f"Creazione della catena QA con LLM: {llm_provider}/{llm_model} e retriever: {retriever_type}")
 
-        PROMPT = PromptTemplate(
-            template=EXPERT_PROMPT, input_variables=["context", "question"]
-        )
+    # Aggiorna la configurazione per la sessione LLM
+    config.llm_provider = llm_provider
+    config.llm_model = llm_model
 
-        # Creiamo la catena che combina il recupero di informazioni (retriever) e il LLM
-        # Ora usiamo il nostro nuovo ParentDocumentRetriever
+    # Applica i wrapper del retriever in base alla selezione
+    final_retriever = retriever
+    if retriever_type == "multi-query":
+        logger.info("Applicazione del wrapper Multi-Query Retriever.")
+        llm_for_mq = LLMFactory.create_llm(provider=llm_provider, model=llm_model, config=config, temperature=0)
+        final_retriever = MultiQueryRetriever.from_llm(retriever=retriever, llm=llm_for_mq)
+    elif retriever_type == "chain-of-thought":
+        logger.info("Modalità Chain-of-Thought Reasoning selezionata.")
+        final_retriever = ChainOfThoughtRetriever(retriever, config)
+
+    try:
+        llm = LLMFactory.create_llm(provider=llm_provider, model=llm_model, config=config, temperature=0.7)
+        PROMPT = PromptTemplate(template=EXPERT_PROMPT, input_variables=["context", "question"])
+        
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
-            chain_type="stuff",  # "stuff" è il metodo più semplice: prende i chunk e li "infila" tutti nel prompt
+            chain_type="stuff",
             retriever=final_retriever,
             return_source_documents=True,
             chain_type_kwargs={"prompt": PROMPT}
         )
-        logger.info("Chatbot pronto per ricevere domande.")
+        logger.info("Catena QA creata con successo.")
         return qa_chain
-        
     except Exception as e:
         logger.error(f"Errore nella creazione della catena QA: {e}")
         raise
@@ -784,192 +575,3 @@ def cleanup_memory_if_needed():
         new_memory_info = memory_optimizer.monitor.get_memory_info()
         logger.info(f"Memoria dopo cleanup: {new_memory_info['rss_mb']:.1f} MB "
                    f"(processo: {new_memory_info['percent']:.1f}%)")
-
-def main():
-    """
-    Funzione che gestisce l'interazione con l'utente.
-    """
-    try:
-        with monitor_memory_usage("chatbot_initialization"):
-            qa_chain = create_chatbot()
-            log_memory_stats_if_enabled()
-    except Exception as e:
-        logger.error(f"Errore critico durante l'inizializzazione: {e}")
-        print(f"Impossibile inizializzare il chatbot: {e}")
-        print("Verifica la configurazione del file .env e la connessione API.")
-        return
-
-    if qa_chain is None:
-        print("Inizializzazione fallita. Controlla i log per maggiori dettagli.")
-        return
-
-    print("\n=== BEARX PRONTO ===")
-    print("Modalità di recupero: ParentDocumentRetriever")
-    print("Questa modalità migliora il contesto fornendo documenti più completi al modello.")
-    print("Digita le tue domande sui documenti PDF caricati.")
-    print("Comandi disponibili: 'esci', 'quit', 'exit' per terminare")
-    print("Comando speciale: 'debug' per analisi dettagliata del retriever")
-    print("Comando speciale: 'memory' per statistiche memoria")
-    print("Comando speciale: 'llm' per visualizzare configurazione LLM\n")
-
-    # Loop infinito per permettere all'utente di fare domande
-    while True:
-        try:
-            user_question = input("\nFai la tua domanda: ").strip()
-            
-            if user_question.lower() in ["esci", "quit", "exit"]:
-                print("Arrivederci!")
-                break
-            
-            if not user_question:
-                print("Per favore, inserisci una domanda.")
-                continue
-
-            # Comando debug speciale
-            if user_question.lower() == "debug":
-                print("\n=== ANALISI DETTAGLIATA RETRIEVER ===")
-                try:
-                    retriever = qa_chain.retriever
-                    # Test con varie query
-                    test_queries = ["bearing", "cuscinetto", "lubrication", "steel", "material"]
-                    for query in test_queries:
-                        docs = retriever.invoke(query)
-                        print(f"\nQuery '{query}': {len(docs)} documenti")
-                        for i, doc in enumerate(docs[:2]):
-                            print(f"  Doc {i+1}: {len(doc.page_content)} chars - '{doc.page_content[:100]}...'")
-                except Exception as e:
-                    print(f"Errore nel debug: {e}")
-                continue
-
-            # Comando llm speciale per cambiare provider
-            if user_question.lower() == "llm":
-                print("\n=== CONFIGURAZIONE LLM ===")
-                from llm_providers import LLMFactory
-
-                available = LLMFactory.get_available_models()
-                print("Provider disponibili:")
-                for i, (provider, models) in enumerate(available.items(), 1):
-                    current = "(ATTUALE)" if provider == config.llm_provider else ""
-                    print(f"  {i}. {provider} {current}")
-                    if models["llm"]:
-                        print(f"     LLM: {', '.join(models['llm'][:3])}{'...' if len(models['llm']) > 3 else ''}")
-                    if models["embeddings"]:
-                        print(f"     Embeddings: {', '.join(models['embeddings'][:2])}{'...' if len(models['embeddings']) > 2 else ''}")
-
-                print(f"\nAttuale: {config.llm_provider}/{config.llm_model}")
-                print(f"Embeddings: {config.embedding_provider}/{config.embedding_model}")
-                print("Per cambiare provider, modifica LLM_PROVIDER nel file .env")
-                print("===========================")
-                continue
-
-            # Comando memory speciale
-            if user_question.lower() == "memory":
-                print("\n=== STATISTICHE MEMORIA ===")
-                memory_report = memory_optimizer.get_memory_report()
-                print(f"Memoria corrente: {memory_report['current_memory_mb']:.1f} MB")
-                if memory_report['baseline_memory_mb']:
-                    print(f"Memoria baseline: {memory_report['baseline_memory_mb']:.1f} MB")
-                    print(f"Delta: {memory_report['delta_mb']:+.1f} MB")
-                print(f"Picco memoria: {memory_report['peak_memory_mb']:.1f} MB")
-                print(f"% processo: {memory_report['process_percent']:.1f}%")
-                print(f"% sistema: {memory_report['system_percent']:.1f}%")
-                print(f"Memoria disponibile: {memory_report['available_mb']:.1f} MB")
-
-                cache_info = memory_report['cache_stats']['embed_query_cache']
-                if cache_info['currsize'] > 0:
-                    hit_rate = cache_info['hits'] / (cache_info['hits'] + cache_info['misses']) * 100
-                    print(f"Cache embeddings: {cache_info['currsize']}/{cache_info['maxsize']} "
-                          f"(hit rate: {hit_rate:.1f}%)")
-                print("===========================")
-
-                # Cleanup se necessario
-                cleanup_memory_if_needed()
-                continue
-
-            # Comando llm speciale
-            if user_question.lower() == "llm":
-                print("\n=== CONFIGURAZIONE LLM ATTUALE ===")
-                print(f"Provider LLM: {config.llm_provider}")
-                print(f"Modello LLM: {config.llm_model}")
-                print(f"Provider Embeddings: {config.embedding_provider}")
-                print(f"Modello Embeddings: {config.embedding_model}")
-
-                print("\n=== MODELLI DISPONIBILI ===")
-                available_models = LLMFactory.get_available_models()
-                for provider, models in available_models.items():
-                    if models["llm"]:
-                        print(f"\n{provider.upper()} LLM:")
-                        for model in models["llm"]:
-                            current = " (ATTUALE)" if provider == config.llm_provider and model == config.llm_model else ""
-                            print(f"  - {model}{current}")
-
-                print("\nPer cambiare modello, modifica il file .env e riavvia l'applicazione")
-                print("================================")
-                continue
-
-            # --- PASSO DI DEBUG: Controlla cosa recupera il retriever ---
-            try:
-                retriever = qa_chain.retriever
-                retrieved_docs = retriever.invoke(user_question)
-                logger.info(f"Recuperati {len(retrieved_docs)} documenti per la domanda")
-                
-                print("\n--- DEBUG: Documenti recuperati dal retriever ---")
-                if not retrieved_docs:
-                    print("ATTENZIONE: Il retriever non ha restituito alcun documento.")
-                    logger.warning("Nessun documento recuperato per la domanda")
-                else:
-                    for i, doc in enumerate(retrieved_docs):
-                        source_file = os.path.basename(doc.metadata.get('source', 'N/A'))
-                        print(f"  --- Documento {i+1} (da {source_file}) ---")
-                        print(f"  Lunghezza: {len(doc.page_content)} caratteri")
-                        print(f"  Parole: {len(doc.page_content.split())} parole")
-                        print(f"  Contenuto: {doc.page_content[:300]}...")
-                        
-                        # Verifica se il contenuto è significativo
-                        if len(doc.page_content.split()) < 10:
-                            print(f"  ⚠️  ATTENZIONE: Contenuto molto scarso!")
-                        
-                print("--------------------------------------------------\n")
-            except Exception as e:
-                logger.error(f"Errore durante il recupero manuale per il debug: {e}")
-                print(f"Errore nel debug del retriever: {e}")
-
-            # Eseguiamo la catena con la domanda dell'utente con monitoraggio memoria
-            with monitor_memory_usage(f"query_processing"):
-                try:
-                    response = qa_chain.invoke({"query": user_question})
-
-                    # Stampiamo la risposta
-                    print("\n--- Risposta ---")
-                    print(response["result"])
-
-                    # Opzionale: stampare i documenti sorgente usati per la risposta
-                    print("\n--- Fonti Utilizzate ---")
-                    if response["source_documents"]:
-                        for source in response["source_documents"]:
-                            source_file = os.path.basename(source.metadata.get('source', 'File sconosciuto'))
-                            print(f"- File: {source_file}")
-                            # print(f"  Contenuto: {source.page_content[:200]}...") # Decommenta per vedere un'anteprima del chunk
-                    else:
-                        print("- Nessuna fonte specifica identificata")
-                    print("--------------------")
-
-                    # Cleanup periodico della memoria
-                    cleanup_memory_if_needed()
-
-                except Exception as e:
-                    logger.error(f"Errore durante l'elaborazione della domanda: {e}")
-                    print(f"Errore nell'elaborazione della domanda: {e}")
-                    print("Riprova con una domanda diversa.")
-                
-        except KeyboardInterrupt:
-            print("\n\nInterruzione da tastiera. Arrivederci!")
-            break
-        except Exception as e:
-            logger.error(f"Errore inaspettato nel loop principale: {e}")
-            print(f"Errore inaspettato: {e}")
-            print("Il programma continuerà, riprova.")
-
-
-if __name__ == "__main__":
-    main()

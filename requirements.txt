@@ -4,16 +4,18 @@ tenacity
 nest-asyncio
 langchain
 langchain-community
+langchain-huggingface
 langchain-google-genai
 google-generativeai
 faiss-cpu
 pypdf
-unstructured[pdf]
-tiktoken
-rank_bm25
+# Essential dependencies
+numpy>=1.24.0
+psutil>=5.9.0
 # Multimodal dependencies
 pytesseract
 opencv-python
 pillow
 pdf2image
 pymupdf
+streamlit-modal

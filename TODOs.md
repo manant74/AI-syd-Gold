@@ -100,51 +100,6 @@
 
 ---
 
-## 🌟 FASE 3: Estensioni Funzionalità (Priority: MEDIUM)
-
-### **TASK-301: Sistema Multi-Modale**
-
-**Stato**: 💡 PROPOSTO
-**Priorità**: MEDIUM
-**Tempo stimato**: 20-25 ore
-
-**Obiettivo**: Supporto per estrazione testo da immagini e diagrammi
-
-**Dettagli implementazione**:
-
-1. **Creare `extensions/multimodal.py`**:
-
-   ```python
-   from langchain.document_loaders import UnstructuredImageLoader
-   import pytesseract
-
-   class MultimodalDocumentProcessor:
-       def extract_text_from_images(self, pdf_path):
-           # OCR per diagrammi tecnici
-
-       def process_technical_diagrams(self, image):
-           # Analisi diagrammi con vision models
-   ```
-
-2. **Dipendenze aggiuntive**:
-   - `pytesseract`
-   - `opencv-python`
-   - `pillow`
-
-3. **Integration points**:
-   - Estendere `load_and_validate_documents()`
-   - Aggiungere processamento immagini nel pipeline
-   - Cache per risultati OCR
-
-**Criteri di accettazione**:
-
-- [ ] Estrazione testo da PDF con immagini
-- [ ] Riconoscimento diagrammi tecnici
-- [ ] Performance accettabile per PDF grandi
-- [ ] Test con documenti real-world
-
----
-
 ### **TASK-302: Sistema di Validazione Qualità**
 
 **Stato**: 💡 PROPOSTO
