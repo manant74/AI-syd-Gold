@@ -16,11 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["EMBEDDING_PROVIDER"] = "huggingface"
 os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.storage import InMemoryStore
+from langchain_core.stores import InMemoryStore
 from langchain.retrievers import ParentDocumentRetriever
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 def load_multimodal_cache():

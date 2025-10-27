@@ -18,9 +18,9 @@ from config.settings import AppConfig
 from app import initialize_embeddings
 from extensions.multimodal import MultimodalDocumentProcessor
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.storage import InMemoryStore
+from langchain_core.stores import InMemoryStore
 from langchain.retrievers import ParentDocumentRetriever
 
 def build_hybrid_store():

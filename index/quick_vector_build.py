@@ -17,7 +17,7 @@ os.environ["EMBEDDING_PROVIDER"] = "huggingface"
 os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"
 
 from langchain_community.vectorstores import FAISS
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 def main():

@@ -6,7 +6,7 @@ import pytest
 import os
 import json
 from unittest.mock import Mock, patch, MagicMock
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 import app
 

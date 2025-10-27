@@ -38,8 +38,8 @@ if platform.system() == 'Windows':
 from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
