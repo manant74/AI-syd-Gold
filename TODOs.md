@@ -1,5 +1,15 @@
 # TODOs - Roadmap di Ottimizzazione AI-syd-Gold
 
+
+- [X]  1. ottimizzaizone tempi di partenza/avvio e check sul caricamento di dati e librerie effettivamente utili
+- [ ]  2. Tecniche di prompting
+- [ ]  3. Attivazione ragionamento per calcoli
+- [ ]  4. Estensione conoscenza sul mondo dei cuscinetti
+- [ ]  5. Estensione messaggi in chat
+- [ ]  6. Generazione proposte domande su pulsanti
+- [X]  7. Evitare di ripetere sempre chi sei
+- [ ]  8. Miglioramento system prompt
+
 ## 🔧 FASE 1: Ottimizzazioni Core (Priority: HIGH)
 
 ### **TASK-1: Logging Strutturato**

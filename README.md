@@ -9,30 +9,35 @@
 ## 🌟 Caratteristiche Principali
 
 ### 🧠 **Multi-Provider AI Support**
+
 - **Google**: Gemini 2.0, 2.5 Flash, 2.5 Pro
 - **OpenAI**: GPT-4o, o1-preview, o1-mini
 - **Anthropic**: Claude 3.5 Haiku, Claude 4 Sonnet/Opus
 - **Ollama**: Modelli locali (offline)
 
 ### 🖼️ **Elaborazione Multimodale**
+
 - **OCR Integrato**: Estrazione testo da immagini e diagrammi tecnici
 - **Riconoscimento Intelligente**: Classificazione automatica di tabelle, formule, schemi
 - **Supporto PDF Ibrido**: Testo nativo + OCR per documenti scansionati
 - **Cache OCR**: Evita riprocessamento con sistema di cache intelligente
 
 ### 💾 **Ottimizzazione Memoria**
+
 - **Monitoraggio Real-time**: Tracking utilizzo memoria con baseline e picchi
 - **Batch Processing Intelligente**: Dimensionamento dinamico basato su memoria disponibile
 - **Cache Memory-Aware**: LRU cache con cleanup automatico
 - **Garbage Collection Aggressivo**: Strategie GC per documenti di grandi dimensioni
 
 ### 🔍 **Strategie di Retrieval Avanzate**
+
 - **Chain-of-Thought**: Ragionamento multi-step per query complesse
 - **Multi-Query**: Generazione automatica di strategie di ricerca multiple
 - **HyDE**: Hypothetical Document Embeddings per ricerca semantica migliorata
 - **Parent-Child Architecture**: Struttura gerarchica per preservazione contesto
 
 ### 🎨 **Interfaccia Utente Evoluta**
+
 - **Visualizzatore PDF Integrato**: Navigazione pagine con link diretti alle fonti
 - **Configurazione Real-time**: Switch dinamico tra modelli e strategie
 - **Modalità Debug**: Strumenti per analizzare retrieval e performance
@@ -114,18 +119,20 @@ python app.py
 ### **Streamlit Cloud** (Consigliato)
 
 1. **Push su GitHub**:
+
 ```bash
 git add .
 git commit -m "Ready for deployment"
 git push origin main
 ```
 
-2. **Deploy su Streamlit Cloud**:
+1. **Deploy su Streamlit Cloud**:
    - Vai su [share.streamlit.io](https://share.streamlit.io)
    - Collega il repository GitHub
    - Configura le variabili d'ambiente nella sezione "Advanced settings"
 
-3. **Variabili d'Ambiente su Streamlit Cloud**:
+2. **Variabili d'Ambiente su Streamlit Cloud**:
+
 ```toml
 GOOGLE_API_KEY = "your_api_key"
 LLM_PROVIDER = "google"
@@ -262,6 +269,7 @@ streamlit run streamlit_app.py
 ```
 
 Nell'interfaccia Streamlit:
+
 - **Analisi Retrieval**: Visualizza documenti recuperati e scoring
 - **Ispezione Cache**: Stato cache e statistiche hit/miss
 - **Monitor Memoria**: Utilizzo memoria real-time
@@ -311,12 +319,14 @@ pip install langchain-huggingface>=0.0.3 sentence-transformers>=2.2.0
 #### **"Tesseract not found"**
 
 **Windows**:
+
 ```bash
 # Download e installa Tesseract da: https://github.com/UB-Mannheim/tesseract/wiki
 # Il sistema rileva automaticamente il path
 ```
 
 **Linux/Mac**:
+
 ```bash
 sudo apt-get install tesseract-ocr tesseract-ocr-ita  # Ubuntu
 brew install tesseract tesseract-lang                  # macOS
@@ -407,6 +417,7 @@ print(response["result"])
 ## 📝 Changelog
 
 ### **v2.0** (Corrente)
+
 - ✨ Supporto multi-provider AI (Google, OpenAI, Anthropic, Ollama)
 - 🖼️ Elaborazione multimodale con OCR intelligente
 - 💾 Sistema ottimizzazione memoria avanzato
@@ -415,6 +426,7 @@ print(response["result"])
 - 📦 Setup deployment moderno
 
 ### **v1.0** (Legacy)
+
 - 📄 Chatbot PDF base con Google Gemini
 - 🔍 Retrieval semplice con FAISS
 - 💬 Interfaccia console basica

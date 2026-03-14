@@ -18,9 +18,9 @@ class AppConfig:
 
     # === CONFIGURAZIONE MODELLI ===
     llm_provider: str = "google"  # "google", "openai", "anthropic", "ollama"
-    llm_model: str = "gemini-2.0-flash"
+    llm_model: str = "gemini-3.1-flash-lite-preview"
     embedding_provider: str = "huggingface"  # "google", "openai", "huggingface"
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "intfloat/multilingual-e5-small"
 
     # === CONFIGURAZIONE RETRIEVAL ===
     retriever_k: int = 5
@@ -56,7 +56,7 @@ class AppConfig:
     log_format: str = "%(asctime)s - %(levelname)s - %(message)s"
 
     # === CONFIGURAZIONE MULTIMODALE ===
-    enable_multimodal: bool = True
+    enable_multimodal: bool = False  # Usato solo dal batch indexing, non a runtime Streamlit
     ocr_confidence_threshold: int = 60
     min_image_size: tuple = (100, 50)
     cache_multimodal_results: bool = True
@@ -120,7 +120,7 @@ class AppConfig:
             log_format=os.getenv("LOG_FORMAT", cls.log_format),
 
             # Multimodale
-            enable_multimodal=os.getenv("ENABLE_MULTIMODAL", "true").lower() in ("true", "1", "yes"),
+            enable_multimodal=os.getenv("ENABLE_MULTIMODAL", "false").lower() in ("true", "1", "yes"),
             ocr_confidence_threshold=int(os.getenv("OCR_CONFIDENCE_THRESHOLD", cls.ocr_confidence_threshold)),
             min_image_size=tuple(map(int, os.getenv("MIN_IMAGE_SIZE", "100,50").split(","))),
             cache_multimodal_results=os.getenv("CACHE_MULTIMODAL_RESULTS", "true").lower() in ("true", "1", "yes"),
@@ -165,7 +165,7 @@ class AppConfig:
             FileNotFoundError: Se directory obbligatorie non esistono
         """
         # Validazione provider
-        valid_llm_providers = ["google", "openai", "anthropic", "ollama"]
+        valid_llm_providers = ["google", "openai", "anthropic"]
         if self.llm_provider not in valid_llm_providers:
             raise ValueError(f"llm_provider deve essere uno di: {valid_llm_providers}")
 

@@ -13,6 +13,7 @@ import time
 import weakref
 from functools import lru_cache, wraps
 from typing import List, Dict, Any, Iterator, Optional, Callable
+from langchain_core.embeddings import Embeddings
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -138,18 +139,29 @@ class CacheManager:
 
     def clear_all_caches(self):
         """Pulisce tutte le cache registrate."""
-        logger.warning("La pulizia della cache è temporaneamente disabilitata per debug.")
-        pass # Disabilitato per debug
+        cleared = 0
+        for cache_func in list(self.caches):
+            try:
+                if hasattr(cache_func, 'cache_clear'):
+                    cache_func.cache_clear()
+                    cleared += 1
+            except Exception as e:
+                logger.warning(f"Errore pulizia cache: {e}")
+        logger.info(f"Pulite {cleared} cache registrate")
 
     def check_memory_pressure(self) -> bool:
         """
         Controlla se c'è pressione di memoria.
-        TEMPORANEAMENTE DISABILITATO PER DEBUG.
+
         Returns:
-            True se la memoria è sotto pressione
+            True se la memoria sistema supera la soglia critica (85%)
         """
-        # Temporaneamente disabilitato per prevenire la pulizia della cache
-        return False
+        try:
+            memory_info = psutil.virtual_memory()
+            return memory_info.percent > 85.0
+        except Exception as e:
+            logger.warning(f"Impossibile controllare pressione memoria: {e}")
+            return False
 
 
 # Istanza globale del cache manager
@@ -192,22 +204,25 @@ def memory_aware_cache(maxsize: int = 128, typed: bool = False):
     return decorator
 
 
-def cached_embed_query(embeddings_model, query_text: str) -> List[float]:
+def make_cached_embedder(embeddings_model):
     """
-    Cache per query di embedding con gestione intelligente della memoria.
-
-    Args:
-        embeddings_model: Modello di embedding
-        query_text: Testo da embeddare
-
-    Returns:
-        Lista di float rappresentante l'embedding
+    Restituisce una funzione embed_query con cache LRU per il modello dato.
+    Evita di ricalcolare l'embedding della stessa query nella stessa sessione.
     """
-    # Crea hash del testo per cache key più efficiente
-    query_hash = hashlib.md5(query_text.encode('utf-8')).hexdigest()
-    logger.debug(f"Embedding query (hash: {query_hash[:8]}...)")
+    @lru_cache(maxsize=256)
+    def _cached_embed(query_text: str) -> tuple:
+        logger.debug(f"Cache miss embedding: {query_text[:40]}...")
+        result = embeddings_model.embed_query(query_text)
+        return tuple(result)
 
-    return embeddings_model.embed_query(query_text)
+    def embed_query(query_text: str) -> List[float]:
+        if isinstance(query_text, dict):
+            query_text = query_text.get('query', query_text.get('input', str(query_text)))
+        return list(_cached_embed(query_text))
+
+    embed_query.cache_info = _cached_embed.cache_info
+    embed_query.cache_clear = _cached_embed.cache_clear
+    return embed_query
 
 
 def process_documents_in_chunks(
@@ -324,47 +339,23 @@ class MemoryOptimizer:
 
     def create_optimized_embeddings_func(self, base_embeddings):
         """
-        Crea una funzione di embedding ottimizzata con cache.
-
-        Args:
-            base_embeddings: Modello di embedding base
-
-        Returns:
-            Funzione di embedding ottimizzata
+        Avvolge il modello di embedding con una cache LRU su embed_query.
+        Evita ricalcoli per query identiche nella stessa sessione.
         """
+        cached_embed_query = make_cached_embedder(base_embeddings)
 
-        def optimized_embed_query(text: str) -> List[float]:
-            return cached_embed_query(base_embeddings, text)
-
-        def optimized_embed_documents(texts: List[str]) -> List[List[float]]:
-            """Embedding di documenti con processamento a chunk."""
-            embeddings = []
-
-            for chunk in process_documents_in_chunks(texts, chunk_size=20):
-                with monitor_memory_usage(f"embedding_chunk_{len(chunk)}_docs"):
-                    chunk_embeddings = base_embeddings.embed_documents(chunk)
-                    embeddings.extend(chunk_embeddings)
-
-            return embeddings
-
-        # Crea wrapper per HuggingFace che non supporta assegnazione dinamica
-        if hasattr(base_embeddings, '__class__') and 'HuggingFace' in str(base_embeddings.__class__):
-            class OptimizedEmbeddingsWrapper:
-                def __init__(self, base_embeddings):
-                    self._base = base_embeddings
-                    # Copia tutti gli attributi originali
-                    for attr in dir(base_embeddings):
-                        if not attr.startswith('_') and not callable(getattr(base_embeddings, attr)):
-                            setattr(self, attr, getattr(base_embeddings, attr))
+        if 'HuggingFace' in type(base_embeddings).__name__:
+            class OptimizedEmbeddingsWrapper(Embeddings):
+                def __init__(self, base):
+                    self._base = base
 
                 def embed_query(self, text):
-                    return optimized_embed_query(text)
+                    return cached_embed_query(text)
 
                 def embed_documents(self, texts):
-                    return optimized_embed_documents(texts)
+                    return self._base.embed_documents(texts)
 
                 def __call__(self, text):
-                    """Supporto per compatibilità FAISS - chiama embed_query."""
                     return self.embed_query(text)
 
                 def __getattr__(self, name):
@@ -372,9 +363,7 @@ class MemoryOptimizer:
 
             return OptimizedEmbeddingsWrapper(base_embeddings)
         else:
-            # Per altri tipi di embeddings, usa assegnazione diretta
-            base_embeddings.embed_query = optimized_embed_query
-            base_embeddings.embed_documents = optimized_embed_documents
+            base_embeddings.embed_query = cached_embed_query
             return base_embeddings
 
     def get_memory_report(self) -> Dict[str, Any]:
@@ -395,9 +384,7 @@ class MemoryOptimizer:
             'process_percent': info['percent'],
             'system_percent': info['system_percent'],
             'available_mb': info['available_mb'],
-            'cache_stats': {
-                'embed_query_cache': cached_embed_query.cache_info()._asdict()
-            }
+            'cache_stats': {}
         }
 
 
@@ -416,17 +403,9 @@ def log_memory_stats():
 # Configurazione automatica garbage collection
 def setup_memory_optimization():
     """Configura ottimizzazioni globali per la memoria."""
-    # Configura garbage collection più aggressivo
-    gc.set_threshold(700, 10, 10)  # Più aggressivo del default (700, 10, 10)
-
-    # Log configurazione
-    logger.info("Ottimizzazioni memoria configurate")
-    logger.info(f"GC thresholds: {gc.get_threshold()}")
-    logger.info(f"Processo PID: {os.getpid()}")
-
-    # Imposta baseline iniziale
+    gc.set_threshold(700, 10, 10)
     memory_monitor.set_baseline()
 
 
-# Inizializzazione automatica
-setup_memory_optimization()
+# Nota: setup_memory_optimization() viene chiamato esplicitamente da chi ne ha bisogno,
+# non all'import, per evitare overhead di avvio.

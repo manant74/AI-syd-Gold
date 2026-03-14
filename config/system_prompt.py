@@ -10,7 +10,7 @@ class SystemPrompts:
     """
 
     # Prompt principale per l'assistente tecnico BearX
-    BEARX_EXPERT_ASSISTANT = """Sei BearX, un assistente tecnico specializzato in ingegneria meccanica e tecnologia dei cuscinetti, con esperienza in applicazioni industriali.
+    BEARX_EXPERT_ASSISTANT = """AGISCI come un assistente tecnico specializzato in ingegneria meccanica e tecnologia dei cuscinetti, con esperienza in applicazioni industriali.
 
 **RUOLO E COMPETENZE:**
 - Esperto in progettazione, selezione e manutenzione di cuscinetti
@@ -40,10 +40,11 @@ Il tuo compito è supportare l’utente nella selezione, applicazione e manutenz
 - **Manutenzione**: Controlli, ispezioni, sostituzioni, diagnostica
 - **Applicazioni**: Contesto industriale, condizioni ambientali, carichi dinamici
 
-**TONO RISPOSTA** 
-Mantieni un linguaggio tecnico ma accessibile. Adatta la complessità della risposta al livello dell’utente (esperto vs. principiante). 
+**TONO RISPOSTA**
+Mantieni un linguaggio tecnico ma accessibile. Adatta la complessità della risposta al livello dell’utente (esperto vs. principiante).
 Spiega i termini tecnici alla prima occorrenza.
-Rispondi sempre nella lingua dell'utente, a meno che l'utente nonscelga una lingua specifica
+Rispondi sempre nella lingua dell’utente, a meno che l’utente non scelga una lingua specifica.
+Il tuo nome è BearX
 
 **CALCOLI**
 Se richiesti, esegui calcoli solo con formule presenti nella knowledge base.
@@ -68,32 +69,6 @@ Alla fine della risposta, aggiungi un suggerimento su ulteriori argomenti rileva
 Questo paragrafo verrà utilizzato per la ricerca semantica per trovare informazioni dalle fonti più pertinenti.
 Domanda: {question}
 Paragrafo di risposta ipotetico:"""
-
-    # Prompt per debug e analisi
-    DEBUG_ANALYSIS = """Analizza il seguente contenuto tecnico e fornisci informazioni dettagliate:
-
-Contenuto:
-{content}
-
-Fornisci:
-1. Classificazione del tipo di contenuto
-2. Parole chiave tecniche identificate
-3. Valutazione della qualità del contenuto
-4. Suggerimenti per miglioramenti"""
-
-    # Prompt per validazione qualità documenti
-    DOCUMENT_QUALITY_VALIDATION = """Valuta la qualità di questa fonte tecnica sui cuscinetti:
-
-Fonte:
-{document}
-
-Criteri di valutazione:
-1. Densità di informazioni tecniche (1-10)
-2. Presenza di dati numerici e specifiche (1-10)
-3. Chiarezza e struttura (1-10)
-4. Rilevanza per l'ingegneria meccanica (1-10)
-
-Fornisci un punteggio per ogni criterio e una valutazione complessiva."""
 
     # Prompt per Chain-of-Thought Reasoning
     CHAIN_OF_THOUGHT_ANALYSIS = """Analizza questa domanda tecnica sui cuscinetti utilizzando un ragionamento step-by-step:
@@ -127,133 +102,8 @@ Genera 3-4 query di ricerca specifiche e mirate:
 
 **PIANO DI RICERCA:**"""
 
-    # Prompt per sintesi Chain-of-Thought
-    CHAIN_OF_THOUGHT_SYNTHESIS = """Sintetizza le informazioni raccolte dalla ricerca Chain-of-Thought:
-
-DOMANDA ORIGINALE: {question}
-
-PIANO DI RICERCA ESEGUITO: {search_plan}
-
-INFORMAZIONI RACCOLTE:
-{collected_info}
-
-**SINTESI RAGIONATA:**
-Utilizzando le informazioni raccolte in sequenza logica, fornisci una risposta completa che:
-1. Segue il ragionamento step-by-step pianificato
-2. Integra tutte le informazioni tecniche rilevanti
-3. Mantiene la coerenza tecnica e la precisione
-4. Evidenzia eventuali collegamenti tra i diversi aspetti
-
-**RISPOSTA FINALE:**"""
 
 
-class PromptBuilder:
-    """
-    Utility class per costruire prompt dinamici con validazione.
-    """
-
-    @staticmethod
-    def build_rag_prompt(context: str, question: str) -> str:
-        """
-        Costruisce il prompt RAG principale con validazione dei parametri.
-
-        Args:
-            context: Il contesto recuperato dalle fonti
-            question: La domanda dell'utente
-
-        Returns:
-            str: Il prompt formattato
-
-        Raises:
-            ValueError: Se context o question sono vuoti
-        """
-        if not context or not context.strip():
-            raise ValueError("Il contesto non può essere vuoto")
-
-        if not question or not question.strip():
-            raise ValueError("La domanda non può essere vuota")
-
-        return SystemPrompts.BEARX_EXPERT_ASSISTANT.format(
-            context=context.strip(),
-            question=question.strip()
-        )
-
-    @staticmethod
-    def build_hyde_prompt(question: str) -> str:
-        """
-        Costruisce il prompt per HyDE.
-
-        Args:
-            question: La domanda dell'utente
-
-        Returns:
-            str: Il prompt HyDE formattato
-
-        Raises:
-            ValueError: Se la domanda è vuota
-        """
-        if not question or not question.strip():
-            raise ValueError("La domanda non può essere vuota")
-
-        return SystemPrompts.HYDE_GENERATION.format(question=question.strip())
-
-    @staticmethod
-    def build_debug_prompt(content: str) -> str:
-        """
-        Costruisce il prompt per analisi debug.
-
-        Args:
-            content: Il contenuto da analizzare
-
-        Returns:
-            str: Il prompt debug formattato
-        """
-        if not content or not content.strip():
-            raise ValueError("Il contenuto non può essere vuoto")
-
-        return SystemPrompts.DEBUG_ANALYSIS.format(content=content.strip())
-
-    @staticmethod
-    def validate_prompt_variables(template: str, **variables) -> bool:
-        """
-        Valida che tutte le variabili necessarie siano presenti nel template.
-
-        Args:
-            template: Il template del prompt
-            **variables: Le variabili da validare
-
-        Returns:
-            bool: True se tutte le variabili sono presenti
-
-        Raises:
-            ValueError: Se mancano variabili richieste
-        """
-        import re
-
-        # Trova tutte le variabili nel template {variable_name}
-        required_vars = set(re.findall(r'\{(\w+)\}', template))
-        provided_vars = set(variables.keys())
-
-        missing_vars = required_vars - provided_vars
-        if missing_vars:
-            raise ValueError(f"Variabili mancanti nel prompt: {missing_vars}")
-
-        extra_vars = provided_vars - required_vars
-        if extra_vars:
-            # Warning per variabili extra (non errore critico)
-            print(f"Warning: Variabili extra fornite: {extra_vars}")
-
-        return True
-
-
-# Istanze di convenience per accesso diretto
-# Utilizzo: from system_prompt import EXPERT_PROMPT, HYDE_PROMPT, etc.
 EXPERT_PROMPT = SystemPrompts.BEARX_EXPERT_ASSISTANT
 HYDE_PROMPT = SystemPrompts.HYDE_GENERATION
-DEBUG_PROMPT = SystemPrompts.DEBUG_ANALYSIS
-VALIDATION_PROMPT = SystemPrompts.DOCUMENT_QUALITY_VALIDATION
 CHAIN_OF_THOUGHT_PROMPT = SystemPrompts.CHAIN_OF_THOUGHT_ANALYSIS
-CHAIN_OF_THOUGHT_SYNTHESIS_PROMPT = SystemPrompts.CHAIN_OF_THOUGHT_SYNTHESIS
-
-# Builder per prompt dinamici
-prompt_builder = PromptBuilder()

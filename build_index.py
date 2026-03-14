@@ -10,7 +10,7 @@ import subprocess
 import argparse
 from pathlib import Path
 
-def run_indexer(script_name, description=""):
+def run_indexer(script_name, description="", extra_args=None):
     """Run an indexer script from the index/ directory."""
     index_dir = Path(__file__).parent / "index"
     script_path = index_dir / script_name
@@ -23,8 +23,9 @@ def run_indexer(script_name, description=""):
         print(f"\n🔧 {description}")
         print("=" * 60)
 
+    cmd = [sys.executable, str(script_path)] + (extra_args or [])
     try:
-        result = subprocess.run([sys.executable, str(script_path)], cwd=str(Path(__file__).parent))
+        result = subprocess.run(cmd, cwd=str(Path(__file__).parent))
         return result.returncode
     except KeyboardInterrupt:
         print("\n⚠️  Indexing interrupted by user")
@@ -40,12 +41,18 @@ def main():
     parser.add_argument("--simple", action="store_true", help="Simple vector store build")
     parser.add_argument("--fixed", action="store_true", help="Fixed parent-document build")
     parser.add_argument("--all", action="store_true", help="Build all index types")
+    parser.add_argument(
+        "--from-phase", type=int, choices=[1, 2, 3], default=1,
+        help="Fase da cui partire (solo per --hybrid): 1=tutto (default), 3=salta estrazione PDF"
+    )
 
     args = parser.parse_args()
 
-    if not any(vars(args).values()):
+    hybrid_extra = [f"--from-phase={args.from_phase}"] if args.from_phase != 1 else []
+
+    if not any([args.quick, args.hybrid, args.simple, args.fixed, args.all]):
         # Default to hybrid build
-        return run_indexer("build_hybrid_store.py", "Building Hybrid Multimodal Vector Store (Default)")
+        return run_indexer("build_hybrid_store.py", "Building Hybrid Multimodal Vector Store (Default)", hybrid_extra)
 
     exit_code = 0
 
@@ -53,7 +60,7 @@ def main():
         exit_code = max(exit_code, run_indexer("quick_vector_build.py", "Building Quick Vector Store"))
 
     if args.hybrid or args.all:
-        exit_code = max(exit_code, run_indexer("build_hybrid_store.py", "Building Hybrid Multimodal Vector Store"))
+        exit_code = max(exit_code, run_indexer("build_hybrid_store.py", "Building Hybrid Multimodal Vector Store", hybrid_extra))
 
     if args.simple or args.all:
         exit_code = max(exit_code, run_indexer("simple_vector_build.py", "Building Simple Vector Store"))

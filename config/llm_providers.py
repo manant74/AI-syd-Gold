@@ -121,40 +121,6 @@ class AnthropicProvider(LLMProvider):
         )
 
 
-class OllamaProvider(LLMProvider):
-    """Provider per Ollama (modelli locali)."""
-
-    def __init__(self, base_url: str = "http://localhost:11434"):
-        self.base_url = base_url
-
-    def create_llm(self, model: str, **kwargs) -> Any:
-        """Crea un modello Ollama."""
-        try:
-            from langchain_community.llms import Ollama
-            return Ollama(
-                model=model,
-                base_url=self.base_url,
-                **kwargs
-            )
-        except ImportError:
-            raise ImportError(
-                "Per usare Ollama provider installa: pip install langchain-community"
-            )
-
-    def create_embeddings(self, model: str, **kwargs) -> Any:
-        """Crea embeddings Ollama."""
-        try:
-            from langchain_community.embeddings import OllamaEmbeddings
-            return OllamaEmbeddings(
-                model=model,
-                base_url=self.base_url,
-                **kwargs
-            )
-        except ImportError:
-            raise ImportError(
-                "Per usare Ollama embeddings installa: pip install langchain-community"
-            )
-
 
 class HuggingFaceProvider:
     """Provider per HuggingFace embeddings."""
@@ -166,6 +132,11 @@ class HuggingFaceProvider:
         """Crea embeddings HuggingFace."""
         try:
             from langchain_huggingface import HuggingFaceEmbeddings
+            # La famiglia E5 richiede prefissi query:/passage: per la modalità asimmetrica
+            e5_models = ("intfloat/multilingual-e5", "intfloat/e5")
+            if any(model.startswith(prefix) for prefix in e5_models):
+                kwargs.setdefault("encode_kwargs", {}).update({"prompt": "passage: "})
+                kwargs.setdefault("query_encode_kwargs", {}).update({"prompt": "query: "})
             return HuggingFaceEmbeddings(
                 model_name=model,
                 **kwargs
@@ -214,10 +185,6 @@ class LLMFactory:
             if not config.anthropic_api_key:
                 raise ValueError("ANTHROPIC_API_KEY richiesta per provider Anthropic")
             provider_instance = AnthropicProvider(config.anthropic_api_key)
-            return provider_instance.create_llm(model, **kwargs)
-
-        elif provider == "ollama":
-            provider_instance = OllamaProvider()
             return provider_instance.create_llm(model, **kwargs)
 
         else:
@@ -272,14 +239,13 @@ class LLMFactory:
         return {
             "google": {
                 "llm": [
-                    "gemini-2.5-flash",
-                    "gemini-2.5-flash-lite",
-                    "gemini-2.5-pro",
-                    "gemini-2.0"  # Supporto legacy
+                    "gemini-3.1-flash-lite-preview",
+                    "gemini-3-flash-preview",
+                    "gemini-3.1-pro-preview",
                 ],
                 "embeddings": [
+                    "models/text-embedding-004",
                     "models/embedding-001",
-                    "models/text-embedding-004"
                 ]
             },
             "openai": {
@@ -288,7 +254,6 @@ class LLMFactory:
                     "gpt-4o-mini",
                     "gpt-4-turbo",
                     "gpt-4",
-                    "gpt-5",
                     "o1-preview",
                     "o1-mini"
                 ],
@@ -300,12 +265,21 @@ class LLMFactory:
             },
             "anthropic": {
                 "llm": [
-                    "claude-3.7-sonnet",     # Claude Sonnet 3.7
-                    "claude-4-sonnet",       # Claude Sonnet 4
-                    "claude-3.5-haiku",      # Claude Haiku 3.5
-                    "claude-4-opus"          # Claude Opus 4.x
+                    "claude-3-7-sonnet-20250219",
+                    "claude-sonnet-4-5",
+                    "claude-opus-4-5",
+                    "claude-3-5-haiku-20241022",
                 ],
                 "embeddings": []
+            },
+            "huggingface": {
+                "llm": [],
+                "embeddings": [
+                    "intfloat/multilingual-e5-small",
+                    "BAAI/bge-m3",
+                    "intfloat/multilingual-e5-large",
+                    "sentence-transformers/all-MiniLM-L6-v2",
+                ]
             }
         }
 

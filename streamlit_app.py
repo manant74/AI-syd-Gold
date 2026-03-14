@@ -5,6 +5,8 @@ nest_asyncio.apply()
 
 import streamlit as st
 import os
+import time
+import random
 import fitz  # PyMuPDF
 from PIL import Image
 import io
@@ -71,8 +73,8 @@ with st.sidebar:
     except ValueError: model_index = 0
     selected_model = st.selectbox("Modello:", available_llm_models, index=model_index)
 
-    selected_embedding_provider = "huggingface"
-    selected_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+    selected_embedding_provider = config.embedding_provider
+    selected_embedding_model = config.embedding_model
 
     st.info(f"**LLM:** {selected_provider}/{selected_model}")
     st.markdown("---")
@@ -84,9 +86,7 @@ with st.sidebar:
     if st.session_state.get("active_retriever_type") != retriever_type or st.session_state.get("active_llm_model") != selected_model:
         st.session_state.active_retriever_type = retriever_type
         st.session_state.active_llm_model = selected_model
-        # Pulisce la cronologia della chat per una sessione pulita con il nuovo modello
         st.session_state.messages = [{"role": "assistant", "content": "Configurazione aggiornata. La chat è stata resettata. Come posso aiutarti?"}]
-        st.rerun()
 
     st.markdown("---")
     if st.button("🗑️ Pulisci cronologia chat"):
@@ -115,14 +115,34 @@ with st.sidebar:
 # --- Funzioni Caricamento Chatbot ---
 @st.cache_resource(show_spinner="Caricamento indice vettoriale...")
 def load_retriever(embedding_provider, embedding_model):
-    return get_retriever(config, embedding_provider, embedding_model)
+    t0 = time.time()
+    result = get_retriever(config, embedding_provider, embedding_model)
+    elapsed = time.time() - t0
+    if result:
+        st.sidebar.caption(f"⏱ Indice caricato in {elapsed:.1f}s")
+    return result
 
 @st.cache_resource(show_spinner="Inizializzazione del modello LLM...")
 def load_qa_chain(_retriever, retriever_type, llm_provider, llm_model):
-    return get_qa_chain(_retriever, retriever_type, llm_provider, llm_model, config)
+    t0 = time.time()
+    result = get_qa_chain(_retriever, retriever_type, llm_provider, llm_model, config)
+    elapsed = time.time() - t0
+    st.sidebar.caption(f"⏱ LLM pronto in {elapsed:.1f}s")
+    return result
 
 base_retriever = load_retriever(selected_embedding_provider, selected_embedding_model)
-qa_chain = load_qa_chain(base_retriever, retriever_type, selected_provider, selected_model) if base_retriever else None
+qa_chain = None
+if base_retriever:
+    try:
+        qa_chain = load_qa_chain(base_retriever, retriever_type, selected_provider, selected_model)
+    except ValueError as e:
+        error_msg = str(e)
+        if "API_KEY" in error_msg or "api_key" in error_msg.lower():
+            st.sidebar.error(f"Chiave API mancante: {error_msg}\n\nAggiungi la variabile al tuo file `.env`")
+        else:
+            st.sidebar.error(f"Errore configurazione: {error_msg}")
+    except Exception as e:
+        st.sidebar.error(f"Errore inizializzazione LLM ({selected_provider}): {e}")
 
 # --- Contenuto della Finestra Modale ---
 if modal.is_open() and st.session_state.pdf_path:
@@ -191,7 +211,6 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🐻"):
-        import random
         spinner_messages = [
             "Consulto gli antichi manuali...",
             "Lubrifico gli ingranaggi della conoscenza...",
@@ -218,7 +237,7 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
             try:
                 response = qa_chain.invoke({"query": prompt})
                 result = response.get("result", "Non sono riuscito a trovare una risposta.")
-                source_documents = response.get("source_documents")
+                source_documents = response.get("context")
                 
                 # Aggiungi la risposta e le fonti alla cronologia
                 st.session_state.messages.append({
@@ -229,6 +248,8 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
                 st.rerun() # riesegui per mostrare il nuovo messaggio e le fonti
 
             except Exception as e:
+                import traceback
+                err_details = traceback.format_exc()
                 st.error(f"Si è verificato un errore: {e}")
+                st.error(err_details)
                 st.session_state.messages.append({"role": "assistant", "content": "Mi dispiace, si è verificato un errore."})
-                st.rerun()

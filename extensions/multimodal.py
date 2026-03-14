@@ -7,41 +7,60 @@ import os
 import io
 import logging
 import hashlib
-import cv2
-import fitz  # PyMuPDF
-import pytesseract
+import platform
 
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-
-logger = logging.getLogger(__name__)
-
-# Configurazione automatica PATH Tesseract per Windows
-import platform
-if platform.system() == 'Windows':
-    # Percorsi comuni Tesseract su Windows
-    possible_paths = [
-        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-        r'C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe'.format(os.getenv('USERNAME')),
-    ]
-
-    for path in possible_paths:
-        if os.path.exists(path):
-            pytesseract.pytesseract.tesseract_cmd = path
-            print(f"Tesseract trovato in: {path}")  # Usa print invece di logger durante import
-            break
-    else:
-        print("Tesseract non trovato nei percorsi standard")
-from PIL import Image, ImageEnhance, ImageFilter
-import numpy as np
-
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
+
+# Import lazy delle librerie pesanti — vengono caricati solo al primo uso
+cv2 = None
+fitz = None
+pytesseract = None
+Image = None
+ImageEnhance = None
+ImageFilter = None
+np = None
+
+def _ensure_heavy_imports():
+    """Carica le librerie pesanti la prima volta che servono."""
+    global cv2, fitz, pytesseract, Image, ImageEnhance, ImageFilter, np
+    if cv2 is not None:
+        return  # già caricate
+
+    import cv2 as _cv2
+    import fitz as _fitz
+    import pytesseract as _pytesseract
+    from PIL import Image as _Image, ImageEnhance as _ImageEnhance, ImageFilter as _ImageFilter
+    import numpy as _np
+
+    cv2 = _cv2
+    fitz = _fitz
+    pytesseract = _pytesseract
+    Image = _Image
+    ImageEnhance = _ImageEnhance
+    ImageFilter = _ImageFilter
+    np = _np
+
+    # Configurazione Tesseract PATH su Windows
+    if platform.system() == 'Windows':
+        possible_paths = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+            r'C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe'.format(os.getenv('USERNAME')),
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                logger.info(f"Tesseract trovato in: {path}")
+                break
+        else:
+            logger.warning("Tesseract non trovato nei percorsi standard")
 
 @dataclass
 class ImageExtractionResult:
@@ -72,16 +91,16 @@ class MultimodalDocumentProcessor:
     def __init__(self, config=None):
         self.config = config or {}
 
-        # Configurazione OCR più permissiva per test
-        self.ocr_config = '--oem 3 --psm 6'  # Rimosso whitelist per test
+        # Configurazione OCR
+        self.ocr_config = '--oem 3 --psm 6'
 
         # Configurazione per diversi tipi di contenuto
         self.table_config = '--oem 3 --psm 6'  # Per tabelle
         self.formula_config = '--oem 3 --psm 8'  # Per formule matematiche
 
-        # Soglie di confidenza più basse per test
-        self.min_confidence = 30  # Abbassato da 60
-        self.min_text_length = 3   # Abbassato da 10
+        # Soglie di confidenza (overridabili via config)
+        self.min_confidence = getattr(config, 'ocr_confidence_threshold', 60)
+        self.min_text_length = 10
 
         # Cache per evitare riprocessamento
         self._cache_dir = Path("cache/multimodal")
@@ -100,6 +119,7 @@ class MultimodalDocumentProcessor:
         Returns:
             Tuple di (documenti, statistiche)
         """
+        _ensure_heavy_imports()
         logger.info(f"Inizio processamento ibrido: {pdf_path}")
         stats = ProcessingStats()
         extracted_documents = []
@@ -157,9 +177,10 @@ class MultimodalDocumentProcessor:
         logger.info(f"Processamento completato: {len(extracted_documents)} documenti creati.")
         return extracted_documents, stats
 
-    def _ocr_scanned_page(self, page: fitz.Page, pdf_path: str, page_num: int) -> Optional[ImageExtractionResult]:
+    def _ocr_scanned_page(self, page, pdf_path: str, page_num: int) -> Optional[ImageExtractionResult]:
         """Esegue OCR su un'intera pagina, trattandola come un'immagine."""
         
+        _ensure_heavy_imports()
         # Controllo cache per l'intera pagina
         cache_key = f"{Path(pdf_path).stem}_page{page_num}_full_ocr"
         cached_result = self._get_cached_result(cache_key)
@@ -247,6 +268,7 @@ class MultimodalDocumentProcessor:
     def _process_image(self, img_data: Dict, pdf_path: str, page_num: int) -> Optional[ImageExtractionResult]:
         """Processa una singola immagine per estrarre testo."""
 
+        _ensure_heavy_imports()
         # Controllo cache
         cache_key = self._generate_cache_key(img_data, pdf_path)
         cached_result = self._get_cached_result(cache_key)
@@ -300,7 +322,7 @@ class MultimodalDocumentProcessor:
 
         return None
 
-    def _preprocess_image(self, image: Image.Image) -> Image.Image:
+    def _preprocess_image(self, image) -> "Image.Image":
         """Preprocessing dell'immagine per migliorare accuratezza OCR."""
 
         # Converti in RGB se necessario
@@ -326,7 +348,7 @@ class MultimodalDocumentProcessor:
 
         return image
 
-    def _classify_image_content(self, image: Image.Image, img_data: Dict) -> str:
+    def _classify_image_content(self, image, img_data: Dict) -> str:
         """Classifica il tipo di contenuto dell'immagine."""
 
         # Converti in array numpy per analisi
@@ -350,7 +372,7 @@ class MultimodalDocumentProcessor:
             # Testo generico
             return 'text'
 
-    def _has_table_structure(self, img_array: np.ndarray) -> bool:
+    def _has_table_structure(self, img_array: Any) -> bool:
         """Rileva se l'immagine contiene strutture tabulari."""
 
         # Converti in scala di grigi
@@ -370,7 +392,7 @@ class MultimodalDocumentProcessor:
         return (h_lines is not None and len(h_lines) >= 2 and
                 v_lines is not None and len(v_lines) >= 2)
 
-    def _has_diagram_features(self, img_array: np.ndarray) -> bool:
+    def _has_diagram_features(self, img_array: Any) -> bool:
         """Rileva caratteristiche tipiche di diagrammi tecnici."""
 
         # Converti in scala di grigi
