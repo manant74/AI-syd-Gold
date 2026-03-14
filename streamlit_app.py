@@ -15,6 +15,7 @@ from streamlit_modal import Modal
 from app import get_retriever, get_qa_chain
 from config import AppConfig
 from config.llm_providers import LLMFactory
+from config.system_prompt import COMMUNICATION_STYLES
 
 config = AppConfig.from_env()
 
@@ -41,7 +42,8 @@ def init_session_state():
     defaults = {
         'pdf_path': None,
         'pdf_page': 0,
-        'messages': [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti?"}]
+        'messages': [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti?"}],
+        'communication_style': 'Consultant',
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -54,46 +56,162 @@ path = st.session_state.get('pdf_path')
 pdf_title = os.path.basename(path) if path else ""
 modal = Modal(title=pdf_title, key="pdf_viewer_modal", max_width=1200)
 
+st.markdown("""
+<style>
+    /* Layout */
+    .block-container { padding-top: 1rem !important; }
+    section[data-testid="stSidebar"] > div { padding-top: 0.3rem !important; }
+
+    /* Messaggi chat — paragrafi */
+    div[data-testid="stChatMessage"] .stMarkdown p {
+        line-height: 1.75;
+        margin-bottom: 0.6rem;
+    }
+
+    /* Titoli nelle risposte */
+    div[data-testid="stChatMessage"] .stMarkdown h1,
+    div[data-testid="stChatMessage"] .stMarkdown h2,
+    div[data-testid="stChatMessage"] .stMarkdown h3 {
+        margin-top: 1.2rem;
+        margin-bottom: 0.4rem;
+    }
+
+    /* Liste */
+    div[data-testid="stChatMessage"] .stMarkdown ul,
+    div[data-testid="stChatMessage"] .stMarkdown ol {
+        padding-left: 1.4rem;
+        margin-bottom: 0.6rem;
+    }
+    div[data-testid="stChatMessage"] .stMarkdown li {
+        margin-bottom: 0.3rem;
+        line-height: 1.65;
+    }
+
+    /* Tabelle */
+    div[data-testid="stChatMessage"] .stMarkdown table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.8rem 0;
+        font-size: 0.9rem;
+    }
+    div[data-testid="stChatMessage"] .stMarkdown th {
+        background-color: #2a4a6b;
+        color: #ffffff;
+        padding: 8px 12px;
+        text-align: left;
+        border: 1px solid #3d6090;
+    }
+    div[data-testid="stChatMessage"] .stMarkdown td {
+        padding: 7px 12px;
+        border: 1px solid #3d3d3d;
+    }
+    div[data-testid="stChatMessage"] .stMarkdown tr:nth-child(even) td {
+        background-color: rgba(255,255,255,0.04);
+    }
+
+    /* Codice inline */
+    div[data-testid="stChatMessage"] .stMarkdown code {
+        background-color: #1e2a3a;
+        color: #7ec8e3;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.88rem;
+    }
+
+    /* Blocchi di codice */
+    div[data-testid="stChatMessage"] .stMarkdown pre {
+        background-color: #141e2b;
+        border-left: 3px solid #4a8fcc;
+        padding: 12px 16px;
+        border-radius: 6px;
+        overflow-x: auto;
+    }
+
+    /* Grassetto */
+    div[data-testid="stChatMessage"] .stMarkdown strong {
+        color: #90caf9;
+    }
+
+    /* Separatori */
+    div[data-testid="stChatMessage"] .stMarkdown hr {
+        border-color: #3d3d3d;
+        margin: 1rem 0;
+    }
+
+    /* Blockquote */
+    div[data-testid="stChatMessage"] .stMarkdown blockquote {
+        border-left: 3px solid #4a8fcc;
+        padding: 4px 12px;
+        margin: 0.6rem 0;
+        color: #aab8c8;
+        font-style: italic;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("☸️ BearX: a bearings expert")
 st.caption("Fai domande sul mondo dei cuscinetti, proverò a rispondere basandomi sulla mia Knowledge Base.")
 
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Configurazione")
-    st.subheader("🤖 Modelli LLM")
-    
-    available_models = LLMFactory.get_available_models()
-    llm_providers = [p for p, m in available_models.items() if m["llm"]]
-    try: provider_index = llm_providers.index(config.llm_provider)
-    except ValueError: provider_index = 0
-    selected_provider = st.selectbox("Provider:", llm_providers, index=provider_index)
 
-    available_llm_models = available_models[selected_provider]["llm"]
-    try: model_index = available_llm_models.index(config.llm_model)
-    except ValueError: model_index = 0
-    selected_model = st.selectbox("Modello:", available_llm_models, index=model_index)
+    # --- Communication Style ---
+    style_options = list(COMMUNICATION_STYLES.keys())
+    style_descriptions = {
+        "Expert": "Diretto e tecnico, nessuna spiegazione extra",
+        "Consultant": "Bilanciato, spiega il ragionamento (default)",
+        "Teacher": "Didattico, spiega i principi e i termini",
+    }
+    selected_style = st.selectbox(
+        "💬 Stile di Risposta:",
+        style_options,
+        index=style_options.index(st.session_state.get("communication_style", "Consultant")),
+    )
+    st.info(f"**{selected_style}** — {style_descriptions[selected_style]}")
+    st.session_state.communication_style = selected_style
+
+    # --- LLM Models ---
+    _label_to_model = LLMFactory.GOOGLE_MODEL_LABELS
+    _model_to_label = {v: k for k, v in _label_to_model.items()}
+    _default_label = _model_to_label.get(config.llm_model, "Lite")
+    _label_options = list(_label_to_model.keys())
+    selected_label = st.selectbox(
+        "🤖 Modello Reasoning:",
+        _label_options,
+        index=_label_options.index(_default_label),
+        help="Lite: veloce e leggero | Flash: bilanciato (default) | Pro: massima qualità",
+    )
+    selected_model = _label_to_model[selected_label]
+    selected_provider = "google"
 
     selected_embedding_provider = config.embedding_provider
     selected_embedding_model = config.embedding_model
 
-    st.info(f"**LLM:** {selected_provider}/{selected_model}")
-    st.markdown("---")
+    st.info(f"**Gemini {selected_label}** — `{selected_model}`")
+    st.markdown("<hr style='margin: 0.4rem 0; border-color: #3d3d3d;'>", unsafe_allow_html=True)
 
-    st.subheader("🔍 Strategia di Recupero")
-    retriever_type = st.radio("Modalità:", ("standard", "hyde", "multi-query", "chain-of-thought"), index=0)
-    st.info(f"Modalità selezionata: **{retriever_type}**")
+    # --- Advanced Settings (collapsible) ---
+    with st.expander("🔧 Impostazioni Avanzate"):
+        st.caption("Strategia di retrieval — Auto usa la migliore in base alla query.")
+        retriever_type = st.radio(
+            "Strategia di Recupero:",
+            ("standard", "hyde", "multi-query"),
+            index=0,
+            help="standard: ricerca diretta | hyde: genera risposta ipotetica per la ricerca | multi-query: riformula la query in varianti multiple",
+        )
+        st.info(f"Strategia: **{retriever_type}**")
 
     if st.session_state.get("active_retriever_type") != retriever_type or st.session_state.get("active_llm_model") != selected_model:
         st.session_state.active_retriever_type = retriever_type
         st.session_state.active_llm_model = selected_model
-        st.session_state.messages = [{"role": "assistant", "content": "Configurazione aggiornata. La chat è stata resettata. Come posso aiutarti?"}]
+        st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX.  Come posso aiutarti?"}]
 
-    st.markdown("---")
     if st.button("🗑️ Pulisci cronologia chat"):
         init_session_state()
         st.rerun()
 
-    st.markdown("---")
+    st.markdown("<hr style='margin: 0.4rem 0; border-color: #3d3d3d;'>", unsafe_allow_html=True)
     st.header("📁 Knowledge Base")
     pdf_dir = config.pdf_directory
     try:
@@ -123,9 +241,9 @@ def load_retriever(embedding_provider, embedding_model):
     return result
 
 @st.cache_resource(show_spinner="Inizializzazione del modello LLM...")
-def load_qa_chain(_retriever, retriever_type, llm_provider, llm_model):
+def load_qa_chain(_retriever, retriever_type, llm_provider, llm_model, communication_style):
     t0 = time.time()
-    result = get_qa_chain(_retriever, retriever_type, llm_provider, llm_model, config)
+    result = get_qa_chain(_retriever, retriever_type, llm_provider, llm_model, config, communication_style)
     elapsed = time.time() - t0
     st.sidebar.caption(f"⏱ LLM pronto in {elapsed:.1f}s")
     return result
@@ -134,7 +252,7 @@ base_retriever = load_retriever(selected_embedding_provider, selected_embedding_
 qa_chain = None
 if base_retriever:
     try:
-        qa_chain = load_qa_chain(base_retriever, retriever_type, selected_provider, selected_model)
+        qa_chain = load_qa_chain(base_retriever, retriever_type, selected_provider, selected_model, selected_style)
     except ValueError as e:
         error_msg = str(e)
         if "API_KEY" in error_msg or "api_key" in error_msg.lower():
@@ -230,7 +348,32 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
             "Avvio la turbina della ricerca...",
             "Calibro la risposta...",
             "Verifico la durezza Rockwell dei fatti...",
-            "Olio i circuiti..."
+            "Olio i circuiti...",
+            "Applico il precarico corretto ai neuroni...",
+            "Verifico il gioco radiale della risposta...",
+            "Controllo che la gabbia non si deformi sotto pressione...",
+            "Calcolo la durata L10 della mia pazienza...",
+            "Cerco freneticamente nel catalogo SKF pagina 347...",
+            "Applico grasso NLGI 2 ai cuscinetti del processore...",
+            "Verifico che la velocità di rotazione non superi il limite termico...",
+            "Misuro la rugosità Ra della domanda con il profilometro...",
+            "Stringo i bulloni della risposta al momento corretto...",
+            "Controllo che non ci siano cricche da fatica nei dati...",
+            "Eseguo l'analisi agli elementi finiti della query...",
+            "Seleziono la tolleranza ISO adeguata per questa risposta...",
+            "Verifico che il fattore di sicurezza sia almeno 1.5...",
+            "Consulto la ISO 281 come se fosse la Bibbia...",
+            "Riduco il rumore NVH della risposta...",
+            "Bilancio dinamicamente i concetti prima di lanciarli...",
+            "Misuro la durezza Brinell dell'argomentazione...",
+            "Scaldo il forno per il trattamento termico dei dati...",
+            "Verifico che il fit albero-mozzo sia davvero H7/k6...",
+            "Eseguo il rodaggio della risposta a bassa velocità...",
+            "Monitoro la temperatura con la termocamera — nulla di grave...",
+            "Analizzo lo spettro FFT dei dati recuperati...",
+            "Controllo che il coefficiente di attrito sia accettabile...",
+            "Cerco l'O-ring giusto tra 847 varianti standard...",
+            "Porto il viscosimetro a temperatura di esercizio...",
         ]
         spinner_text = random.choice(spinner_messages)
         with st.spinner(spinner_text):

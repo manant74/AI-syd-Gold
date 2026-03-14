@@ -11,3 +11,4 @@ feedback.db
 # File generati dal sistema operativo
 .DS_Store
 Thumbs.db
+Modello BE/*

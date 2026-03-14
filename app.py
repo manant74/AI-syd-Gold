@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # Import configurazione centralizzata
 from config import AppConfig
-from config.system_prompt import CHAIN_OF_THOUGHT_PROMPT, EXPERT_PROMPT, HYDE_PROMPT
+from config.system_prompt import EXPERT_PROMPT, HYDE_PROMPT, COMMUNICATION_STYLES
 
 # Import delle classi necessarie da LangChain
 from config.llm_providers import LLMFactory
@@ -530,7 +530,7 @@ def get_retriever(config, embedding_provider, embedding_model):
         logger.error("La cache potrebbe essere corrotta o incompatibile. Eseguire 'build_hybrid_store.py' per rigenerarla.")
         return None
 
-def get_qa_chain(retriever, retriever_type, llm_provider, llm_model, config):
+def get_qa_chain(retriever, retriever_type, llm_provider, llm_model, config, communication_style: str = "Consultant"):
     """Crea la catena di QA usando il retriever fornito e il modello LLM specificato."""
     logger.info(f"Creazione della catena QA con LLM: {llm_provider}/{llm_model} e retriever: {retriever_type}")
 
@@ -553,7 +553,9 @@ def get_qa_chain(retriever, retriever_type, llm_provider, llm_model, config):
 
     try:
         llm = LLMFactory.create_llm(provider=llm_provider, model=llm_model, config=config, temperature=0.7)
-        PROMPT = PromptTemplate(template=EXPERT_PROMPT, input_variables=["context", "question"])
+        style_block = COMMUNICATION_STYLES.get(communication_style, COMMUNICATION_STYLES["Consultant"])
+        prompt_text = EXPERT_PROMPT.replace("{communication_style}", style_block)
+        PROMPT = PromptTemplate(template=prompt_text, input_variables=["context", "question"])
 
         def format_docs(docs):
             return "\n\n".join(doc.page_content for doc in docs)

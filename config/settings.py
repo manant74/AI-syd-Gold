@@ -165,7 +165,7 @@ class AppConfig:
             FileNotFoundError: Se directory obbligatorie non esistono
         """
         # Validazione provider
-        valid_llm_providers = ["google", "openai", "anthropic"]
+        valid_llm_providers = ["google"]
         if self.llm_provider not in valid_llm_providers:
             raise ValueError(f"llm_provider deve essere uno di: {valid_llm_providers}")
 
@@ -176,10 +176,6 @@ class AppConfig:
         # Validazione API key basata sul provider
         if self.llm_provider == "google" and not self.google_api_key:
             raise ValueError("GOOGLE_API_KEY richiesta per provider 'google'")
-        elif self.llm_provider == "openai" and not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY richiesta per provider 'openai'")
-        elif self.llm_provider == "anthropic" and not self.anthropic_api_key:
-            raise ValueError("ANTHROPIC_API_KEY richiesta per provider 'anthropic'")
 
         # Validazione API key per embeddings
         if self.embedding_provider == "google" and not self.google_api_key:

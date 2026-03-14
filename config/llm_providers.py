@@ -175,18 +175,6 @@ class LLMFactory:
             provider_instance = GoogleProvider(config.google_api_key)
             return provider_instance.create_llm(model, **kwargs)
 
-        elif provider == "openai":
-            if not config.openai_api_key:
-                raise ValueError("OPENAI_API_KEY richiesta per provider OpenAI")
-            provider_instance = OpenAIProvider(config.openai_api_key)
-            return provider_instance.create_llm(model, **kwargs)
-
-        elif provider == "anthropic":
-            if not config.anthropic_api_key:
-                raise ValueError("ANTHROPIC_API_KEY richiesta per provider Anthropic")
-            provider_instance = AnthropicProvider(config.anthropic_api_key)
-            return provider_instance.create_llm(model, **kwargs)
-
         else:
             raise ValueError(f"Provider LLM non supportato: {provider}")
 
@@ -215,12 +203,6 @@ class LLMFactory:
             provider_instance = GoogleProvider(config.google_api_key)
             return provider_instance.create_embeddings(model, **kwargs)
 
-        elif provider == "openai":
-            if not config.openai_api_key:
-                raise ValueError("OPENAI_API_KEY richiesta per provider OpenAI")
-            provider_instance = OpenAIProvider(config.openai_api_key)
-            return provider_instance.create_embeddings(model, **kwargs)
-
         elif provider == "huggingface":
             provider_instance = HuggingFaceProvider(config.huggingface_api_key)
             return provider_instance.create_embeddings(model, **kwargs)
@@ -228,49 +210,29 @@ class LLMFactory:
         else:
             raise ValueError(f"Provider embeddings non supportato: {provider}")
 
+    # Mappa etichette UI -> model ID Google
+    GOOGLE_MODEL_LABELS = {
+        "Lite":  "gemini-3.1-flash-lite-preview",
+        "Flash": "gemini-3.1-flash-preview",
+        "Pro":   "gemini-3.1-pro-preview",
+    }
+
     @staticmethod
     def get_available_models() -> dict:
         """
         Restituisce un dizionario dei modelli disponibili per provider.
+        Solo Google è attualmente abilitato.
 
         Returns:
             dict: Dizionario con provider e modelli disponibili
         """
         return {
             "google": {
-                "llm": [
-                    "gemini-3.1-flash-lite-preview",
-                    "gemini-3-flash-preview",
-                    "gemini-3.1-pro-preview",
-                ],
+                "llm": list(LLMFactory.GOOGLE_MODEL_LABELS.values()),
                 "embeddings": [
                     "models/text-embedding-004",
                     "models/embedding-001",
                 ]
-            },
-            "openai": {
-                "llm": [
-                    "gpt-4o",
-                    "gpt-4o-mini",
-                    "gpt-4-turbo",
-                    "gpt-4",
-                    "o1-preview",
-                    "o1-mini"
-                ],
-                "embeddings": [
-                    "text-embedding-3-large",
-                    "text-embedding-3-small",
-                    "text-embedding-ada-002"
-                ]
-            },
-            "anthropic": {
-                "llm": [
-                    "claude-3-7-sonnet-20250219",
-                    "claude-sonnet-4-5",
-                    "claude-opus-4-5",
-                    "claude-3-5-haiku-20241022",
-                ],
-                "embeddings": []
             },
             "huggingface": {
                 "llm": [],
