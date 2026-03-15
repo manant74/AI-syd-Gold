@@ -38,6 +38,8 @@ def render_pdf_page(_pdf_path, page_num, zoom):
 st.set_page_config(page_title="BearX Chatbot", page_icon="☸️", layout="wide", initial_sidebar_state="expanded")
 
 # --- Inizializzazione Session State ---
+CHAT_HISTORY_TURNS = 10  # Numero di turni (coppie user/assistant) da passare al LLM come contesto
+
 def init_session_state():
     defaults = {
         'pdf_path': None,
@@ -48,6 +50,26 @@ def init_session_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def build_context_prefix(messages: list, max_turns: int = CHAT_HISTORY_TURNS) -> str:
+    """
+    Costruisce un prefisso testuale con gli ultimi max_turns turni della conversazione.
+    Viene anteposto alla query corrente per dare al LLM memoria della sessione.
+    Esclude il messaggio iniziale di benvenuto e limita a max_turns coppie user/assistant.
+    """
+    # Filtra solo messaggi user/assistant (esclude il benvenuto iniziale statico)
+    conversation = [m for m in messages if not (m["role"] == "assistant" and "Sono BearX" in m["content"] and len(m["content"]) < 80)]
+    if not conversation:
+        return ""
+    # Prendi gli ultimi max_turns * 2 messaggi (ogni turno = 1 user + 1 assistant)
+    recent = conversation[-(max_turns * 2):]
+    lines = ["[CONVERSAZIONE PRECEDENTE — usa questi dati se rilevanti per la domanda attuale]"]
+    for msg in recent:
+        role_label = "Utente" if msg["role"] == "user" else "BearX"
+        lines.append(f"{role_label}: {msg['content'][:500]}")  # Tronca messaggi molto lunghi
+    lines.append("[FINE CONVERSAZIONE PRECEDENTE]")
+    return "\n".join(lines)
 
 init_session_state()
 
@@ -378,21 +400,34 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
         spinner_text = random.choice(spinner_messages)
         with st.spinner(spinner_text):
             try:
-                response = qa_chain.invoke({"query": prompt})
+                # Costruisci il contesto della sessione con i turni precedenti
+                context_prefix = build_context_prefix(st.session_state.messages)
+                query_with_context = f"{context_prefix}\n\n{prompt}" if context_prefix else prompt
+
+                response = qa_chain.invoke({"query": query_with_context})
                 result = response.get("result", "Non sono riuscito a trovare una risposta.")
                 source_documents = response.get("context")
-                
+
                 # Aggiungi la risposta e le fonti alla cronologia
                 st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": result, 
+                    "role": "assistant",
+                    "content": result,
                     "source_documents": source_documents
                 })
                 st.rerun() # riesegui per mostrare il nuovo messaggio e le fonti
 
             except Exception as e:
                 import traceback
-                err_details = traceback.format_exc()
-                st.error(f"Si è verificato un errore: {e}")
-                st.error(err_details)
-                st.session_state.messages.append({"role": "assistant", "content": "Mi dispiace, si è verificato un errore."})
+                import logging
+                logging.error(f"BearX chat error: {traceback.format_exc()}")
+                error_type = type(e).__name__
+                if "timeout" in str(e).lower() or "deadline" in str(e).lower():
+                    user_msg = "La risposta ha impiegato troppo tempo. Prova a riformulare la domanda in modo più conciso."
+                elif "quota" in str(e).lower() or "rate" in str(e).lower():
+                    user_msg = "Limite di utilizzo API raggiunto. Attendi qualche secondo e riprova."
+                elif "context" in str(e).lower() or "token" in str(e).lower():
+                    user_msg = "La sessione è diventata troppo lunga. Usa il tasto 'Pulisci cronologia chat' per ricominciare."
+                else:
+                    user_msg = f"Si è verificato un errore imprevisto ({error_type}). Riprova o pulisci la cronologia."
+                st.error(user_msg)
+                st.session_state.messages.append({"role": "assistant", "content": f"⚠️ {user_msg}"})
