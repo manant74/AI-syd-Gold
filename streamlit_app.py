@@ -46,6 +46,7 @@ def init_session_state():
         'pdf_page': 0,
         'messages': [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti?"}],
         'communication_style': 'Consultant',
+        'saved_sessions': [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -72,6 +73,93 @@ def build_context_prefix(messages: list, max_turns: int = CHAT_HISTORY_TURNS) ->
     return "\n".join(lines)
 
 init_session_state()
+
+# --- Gestione Sessioni ---
+MAX_SAVED_SESSIONS = 10
+
+def _generate_session_name() -> str:
+    from datetime import datetime
+    msgs = [m for m in st.session_state.messages if m["role"] == "user"]
+    prefix = msgs[0]["content"][:40].strip() if msgs else "Sessione"
+    ts = datetime.now().strftime("%H:%M - %d/%m/%Y")
+    return f"{prefix} — {ts}"
+
+def _unique_session_name(name: str) -> str:
+    existing = {s["name"] for s in st.session_state.saved_sessions}
+    if name not in existing:
+        return name
+    counter = 2
+    while f"{name} ({counter})" in existing:
+        counter += 1
+    return f"{name} ({counter})"
+
+def session_to_markdown(session: dict) -> str:
+    lines = [
+        f"# Sessione: {session['name']}",
+        f"**Data:** {session.get('timestamp', '')}",
+        "",
+        "---",
+        "",
+    ]
+    for msg in session["messages"]:
+        if msg["role"] == "user":
+            lines.append(f"**🧑‍🔧 Utente:** {msg['content']}")
+        else:
+            lines.append(f"**🐻 BearX:** {msg['content']}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    return "\n".join(lines)
+
+def markdown_to_messages(md_content: str) -> list:
+    messages = []
+    for line in md_content.splitlines():
+        line = line.strip()
+        if line.startswith("**🧑‍🔧 Utente:**"):
+            content = line[len("**🧑‍🔧 Utente:**"):].strip()
+            if content:
+                messages.append({"role": "user", "content": content})
+        elif line.startswith("**🐻 BearX:**"):
+            content = line[len("**🐻 BearX:**"):].strip()
+            if content:
+                messages.append({"role": "assistant", "content": content})
+    return messages
+
+@st.dialog("💾 Save Session")
+def save_session_dialog():
+    from datetime import datetime
+    user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
+    if not user_msgs:
+        st.warning("Nessuna conversazione da salvare.")
+        if st.button("Chiudi"):
+            st.rerun()
+        return
+    if len(st.session_state.saved_sessions) >= MAX_SAVED_SESSIONS:
+        st.warning(f"Limite di {MAX_SAVED_SESSIONS} sessioni raggiunto. Elimina una sessione prima di salvarne un'altra.")
+        if st.button("Chiudi"):
+            st.rerun()
+        return
+
+    auto_name = _generate_session_name()
+    name = st.text_input("Nome sessione:", value=auto_name)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Salva", use_container_width=True):
+            final_name = _unique_session_name(name.strip() or auto_name)
+            session = {
+                "name": final_name,
+                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "messages": list(st.session_state.messages),
+                "pdf_path": st.session_state.get("pdf_path"),
+                "communication_style": st.session_state.get("communication_style", "Consultant"),
+                "retriever_type": st.session_state.get("active_retriever_type", "standard"),
+            }
+            st.session_state.saved_sessions.append(session)
+            st.success(f"Sessione «{final_name}» salvata!")
+            st.rerun()
+    with col2:
+        if st.button("Annulla", use_container_width=True):
+            st.rerun()
 
 # --- Definizione della Finestra Modale ---
 path = st.session_state.get('pdf_path')
@@ -229,9 +317,61 @@ with st.sidebar:
         st.session_state.active_llm_model = selected_model
         st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX.  Come posso aiutarti?"}]
 
-    if st.button("🗑️ Pulisci cronologia chat"):
-        init_session_state()
-        st.rerun()
+    _btn_col1, _btn_col2 = st.columns(2)
+    with _btn_col1:
+        if st.button("🆕 New Session", use_container_width=True):
+            st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti?"}]
+            st.session_state.pdf_path = None
+            st.session_state.pdf_page = 0
+            st.rerun()
+    with _btn_col2:
+        if st.button("💾 Save Session", use_container_width=True):
+            save_session_dialog()
+
+    # --- Sessioni Salvate ---
+    if st.session_state.saved_sessions:
+        st.markdown("<hr style='margin: 0.4rem 0; border-color: #3d3d3d;'>", unsafe_allow_html=True)
+        st.subheader("📂 Sessioni Salvate")
+        for _i, _sess in enumerate(reversed(st.session_state.saved_sessions)):
+            _real_idx = len(st.session_state.saved_sessions) - 1 - _i
+            with st.expander(_sess["name"]):
+                st.caption(_sess.get("timestamp", ""))
+                _c1, _c2, _c3 = st.columns(3)
+                with _c1:
+                    if st.button("📂 Riprendi", key=f"load_{_real_idx}", use_container_width=True):
+                        st.session_state.messages = list(_sess["messages"])
+                        st.session_state.pdf_path = _sess.get("pdf_path")
+                        st.session_state.pdf_page = 0
+                        st.session_state.communication_style = _sess.get("communication_style", "Consultant")
+                        st.rerun()
+                with _c2:
+                    _md_content = session_to_markdown(_sess)
+                    _safe_name = _sess["name"].replace("/", "-").replace(":", "-")
+                    st.download_button(
+                        "⬇️ Scarica",
+                        data=_md_content,
+                        file_name=f"{_safe_name}.md",
+                        mime="text/markdown",
+                        key=f"dl_{_real_idx}",
+                        use_container_width=True,
+                    )
+                with _c3:
+                    if st.button("🗑️ Elimina", key=f"del_{_real_idx}", use_container_width=True):
+                        st.session_state.saved_sessions.pop(_real_idx)
+                        st.rerun()
+
+    # --- Import sessione da file MD ---
+    st.markdown("<hr style='margin: 0.4rem 0; border-color: #3d3d3d;'>", unsafe_allow_html=True)
+    with st.expander("📤 Importa Sessione da file .md"):
+        _uploaded = st.file_uploader("Carica file .md", type=["md"], key="md_uploader", label_visibility="collapsed")
+        if _uploaded:
+            _parsed = markdown_to_messages(_uploaded.read().decode("utf-8"))
+            if _parsed:
+                st.session_state.messages = [{"role": "assistant", "content": "Ciao! Sono BearX. Come posso aiutarti?"}] + _parsed
+                st.success("Sessione importata!")
+                st.rerun()
+            else:
+                st.error("File non valido o formato non riconosciuto.")
 
     st.markdown("<hr style='margin: 0.4rem 0; border-color: #3d3d3d;'>", unsafe_allow_html=True)
     st.header("📁 Knowledge Base")
@@ -326,17 +466,17 @@ if qa_chain is None:
     st.stop()
 
 # Visualizza la cronologia della chat
-for message in st.session_state.messages:
+for msg_idx, message in enumerate(st.session_state.messages):
     avatar = "🐻" if message["role"] == "assistant" else "🧑‍🔧"
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
         # Se il messaggio è dall'assistente e ha fonti, mostrale
         if message["role"] == "assistant" and "source_documents" in message and message["source_documents"]:
             with st.expander("Vedi fonti e contesto utilizzato"):
-                for doc in message["source_documents"]:
+                for doc_idx, doc in enumerate(message["source_documents"]):
                     doc_source = doc.metadata.get('source', 'Sconosciuto')
                     doc_page = doc.metadata.get('page', -1)
-                    if st.button(f"📄 {os.path.basename(doc_source)}, Pagina {doc_page + 1}", key=f"src_{doc_source}_{doc_page}_{message['content'][:10]}"):
+                    if st.button(f"📄 {os.path.basename(doc_source)}, Pagina {doc_page + 1}", key=f"src_{msg_idx}_{doc_idx}_{doc_source}_{doc_page}"):
                         st.session_state.pdf_path = doc_source
                         st.session_state.pdf_page = doc_page
                         render_pdf_page.clear()
@@ -426,7 +566,7 @@ if prompt := st.chat_input("Fai la tua domanda qui..."):
                 elif "quota" in str(e).lower() or "rate" in str(e).lower():
                     user_msg = "Limite di utilizzo API raggiunto. Attendi qualche secondo e riprova."
                 elif "context" in str(e).lower() or "token" in str(e).lower():
-                    user_msg = "La sessione è diventata troppo lunga. Usa il tasto 'Pulisci cronologia chat' per ricominciare."
+                    user_msg = "La sessione è diventata troppo lunga. Usa il tasto 'New Session' per ricominciare."
                 else:
                     user_msg = f"Si è verificato un errore imprevisto ({error_type}). Riprova o pulisci la cronologia."
                 st.error(user_msg)
